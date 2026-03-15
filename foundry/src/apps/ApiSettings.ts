@@ -1,6 +1,6 @@
 import {AI_ASSISTANT_USER_NAME, NAMESPACE, SETTINGS} from "../definitions.js";
 
-class AiAssistantApp extends foundry.applications.api.ApplicationV2 {
+class AiAssistantApp extends foundry.applications.api.ApplicationV2<{ userId: string; password: string }> {
     static DEFAULT_OPTIONS = {
         id: "beavers-ai-assistant-settings",
         window: {

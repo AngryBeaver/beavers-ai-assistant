@@ -18,14 +18,6 @@
   "relationships": {
     "requires": [
       {
-        "id": "beavers-system-interface",
-        "type": "module",
-        "compatibility": {
-          "minimum": "2.3.1",
-          "verified": "2.3.1"
-        }
-      },
-      {
         "id": "socketlib",
         "type": "module",
         "compatibility": {
