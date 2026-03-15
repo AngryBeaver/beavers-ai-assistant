@@ -50,13 +50,12 @@ jobs:
       - name: Bump version in package.json
         working-directory: .
         run: |
-          cd foundry && npm version ${{ steps.version.outputs.num }} --no-git-tag-version && cd ..
-          cd client && npm version ${{ steps.version.outputs.num }} --no-git-tag-version && cd ..
+          npm pkg set version=${{ steps.version.outputs.num }} --prefix foundry
+          npm pkg set version=${{ steps.version.outputs.num }} --prefix client
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add foundry/package.json foundry/package-lock.json client/package.json
-          git commit -m "chore: bump version to ${{ steps.version.outputs.tag }}"
-          git push
+          git add foundry/package.json client/package.json
+          git diff --staged --quiet || git commit -m "chore: bump version to ${{ steps.version.outputs.tag }}" && git push
 
       - name: Build release zip
         run: npm run release
