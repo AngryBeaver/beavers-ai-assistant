@@ -11,7 +11,6 @@ Connects external AI tools to [Foundry VTT](https://foundryvtt.com) by exposing 
 | [`test/`](./test) | Local test CLI — quick manual testing against a running Foundry instance |
 
 ## How it works
-
 1. Install the **Foundry module** (`foundry/`) in your Foundry VTT instance.
 2. The module auto-creates an **AI-Assistant** user and shows its credentials in the module settings.
 3. Use the **npm client** (`client/`) in your tool to connect and call the API:
