@@ -29,13 +29,11 @@ export class SocketApi {
   private static readonly handler = (data: SocketRequest) => SocketApi.onRequest(data);
 
   static start(): void {
-    // @ts-ignore
     game.socket.on(SOCKET_NAME, SocketApi.handler);
     console.log(`${NAMESPACE} | Socket API started`);
   }
 
   static stop(): void {
-    // @ts-ignore
     game.socket.off(SOCKET_NAME, SocketApi.handler);
   }
 
@@ -67,7 +65,6 @@ export class SocketApi {
     }
 
     const response: SocketResponse = error ? { id: data.id, error } : { id: data.id, data: result };
-    // @ts-ignore
     game.socket.emit(SOCKET_NAME, response);
   }
 }

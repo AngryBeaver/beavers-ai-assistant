@@ -58,31 +58,25 @@ class AiAssistantApp extends foundry.applications.api.ApplicationV2<{ userId: st
   }
 
   static async _onCopyUserId(this: AiAssistantApp): Promise<void> {
-    // @ts-ignore
     const user = game.users.find((u: any) => u.name === AI_ASSISTANT_USER_NAME);
     if (!user) return;
     await navigator.clipboard.writeText(user.id);
-    // @ts-ignore
+
     ui.notifications.info("User ID copied to clipboard.");
   }
 
   static async _onCopyPassword(this: AiAssistantApp): Promise<void> {
-    // @ts-ignore
     const password = game.settings.get(NAMESPACE, SETTINGS.AI_ASSISTANT_PASSWORD) as string;
     await navigator.clipboard.writeText(password);
-    // @ts-ignore
     ui.notifications.info("Password copied to clipboard.");
   }
 
   static async _onRegenerate(this: AiAssistantApp): Promise<void> {
-    // @ts-ignore
     const user = game.users.find((u: any) => u.name === AI_ASSISTANT_USER_NAME);
     if (!user) return;
     const newPassword = foundry.utils.randomID(32);
     await user.update({ password: newPassword });
-    // @ts-ignore
     await game.settings.set(NAMESPACE, SETTINGS.AI_ASSISTANT_PASSWORD, newPassword);
-    // @ts-ignore
     await this.render({ force: true });
   }
 }
@@ -93,7 +87,6 @@ export class ApiSettings {
   }
 
   registerSettings() {
-    // @ts-ignore
     game.settings.register(NAMESPACE, SETTINGS.AI_ASSISTANT_PASSWORD, {
       scope: "world",
       config: false,
@@ -101,7 +94,6 @@ export class ApiSettings {
       default: "",
     });
 
-    // @ts-ignore
     game.settings.registerMenu(NAMESPACE, "aiAssistant", {
       name: "AI Assistant",
       label: "Connection Info",

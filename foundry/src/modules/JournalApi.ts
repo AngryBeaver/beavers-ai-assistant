@@ -5,21 +5,17 @@ export class JournalApi {
    * List journals in a folder (by folder id or name). Defaults to root (no folder).
    */
   static async listJournals(folderIdentifier?: string) {
-    // @ts-ignore
     let folderId: string | null = null;
     if (folderIdentifier) {
-      // @ts-ignore
       const folder =
         game.folders.get(folderIdentifier) ||
         game.folders.find((f: any) => f.name === folderIdentifier && f.type === "JournalEntry");
       if (!folder) throw new Error(`Folder not found: ${folderIdentifier}`);
       folderId = folder.id;
     }
-    // @ts-ignore
     const folders = game.folders
       .filter((f: any) => f.type === "JournalEntry" && (folderId ? f.folder?.id === folderId : f.folder == null))
       .map((f: any) => ({ id: f.id, name: f.name, type: "folder" }));
-    // @ts-ignore
     const journals = game.journal
       .filter((j: any) => (folderId ? j.folder?.id === folderId : j.folder == null))
       .map((j: any) => ({ id: j.id, name: j.name, type: "journal" }));
@@ -30,7 +26,6 @@ export class JournalApi {
    * Read a journal entry by ID or name.
    */
   static async readJournal(identifier: string) {
-    // @ts-ignore
     const journal = game.journal.get(identifier) || game.journal.getName(identifier);
     if (!journal) {
       throw new Error(`Journal entry not found: ${identifier}`);
@@ -53,7 +48,6 @@ export class JournalApi {
    * Create or update a journal entry.
    */
   static async writeJournal(data: any) {
-    // @ts-ignore
     let journal = data.id ? game.journal.get(data.id) : data.name ? game.journal.getName(data.name) : null;
 
     if (journal) {
@@ -68,7 +62,6 @@ export class JournalApi {
    * Add or update a page in a journal entry.
    */
   static async writeJournalPage(journalIdentifier: string, pageData: any) {
-    // @ts-ignore
     const journal = game.journal.get(journalIdentifier) || game.journal.getName(journalIdentifier);
     if (!journal) {
       throw new Error(`Journal entry not found: ${journalIdentifier}`);
