@@ -1,7 +1,7 @@
 {
   "name": "beavers-ai-assistant",
   "title": "Beaver's AI Assistant",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Exposes an API for external tools to interact with Foundry Journals.",
   "devDir": "c:\\vtts\\v13.348\\Data\\modules",
   "main": "src/beavers-ai-assistant.js",
