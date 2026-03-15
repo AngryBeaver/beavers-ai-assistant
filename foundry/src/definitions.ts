@@ -3,5 +3,5 @@ export const SOCKET_NAME = `module.${NAMESPACE}`;
 export const AI_ASSISTANT_USER_NAME = "AI-Assistant";
 
 export const SETTINGS = {
-    AI_ASSISTANT_PASSWORD: "aiAssistantPassword",
+  AI_ASSISTANT_PASSWORD: "aiAssistantPassword",
 };
