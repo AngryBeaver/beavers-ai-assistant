@@ -9,6 +9,9 @@ jobs:
     runs-on: ubuntu-latest
     if: startsWith(github.event.head_commit.message, 'release v')
 
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
     permissions:
       contents: write
 
@@ -35,7 +38,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "22"
           cache: "npm"
           cache-dependency-path: foundry/package-lock.json
 
@@ -45,14 +48,13 @@ jobs:
         run: npm run typecheck
 
       - name: Bump version in package.json
+        working-directory: .
         run: |
-          npm version ${{ steps.version.outputs.num }} --no-git-tag-version
-          cd ../client
-          npm version ${{ steps.version.outputs.num }} --no-git-tag-version
-          cd ..
+          cd foundry && npm version ${{ steps.version.outputs.num }} --no-git-tag-version && cd ..
+          cd client && npm version ${{ steps.version.outputs.num }} --no-git-tag-version && cd ..
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add package.json package-lock.json ../client/package.json
+          git add foundry/package.json foundry/package-lock.json client/package.json
           git commit -m "chore: bump version to ${{ steps.version.outputs.tag }}"
           git push
 
@@ -72,6 +74,9 @@ jobs:
   publish-client:
     runs-on: ubuntu-latest
     needs: release
+
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
     permissions:
       contents: read
