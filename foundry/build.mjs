@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// build.mjs - esbuild-based build script for beavers-ai-assistant
+// build.mjs - esbuild-based build script for beavers-voice-transcript
 // Usage: node build.mjs <command>
 //   Commands: build | dev | devwatch | watch | zip | clean
 
@@ -27,7 +27,7 @@ const MODULE_JSON_SRC = path.join(__dirname, "module.json");
 
 const SRC_DIR = path.join(__dirname, "src");
 // Forward-slash path used inside module.json esmodules array
-const BUNDLE_JS_PATH = "src/beavers-ai-assistant.js";
+const BUNDLE_JS_PATH = "src/beavers-voice-transcript.js";
 
 // Recursively collect all .ts files under a directory
 function findTsFiles(dir) {

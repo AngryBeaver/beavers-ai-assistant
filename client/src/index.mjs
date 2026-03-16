@@ -1,7 +1,7 @@
 import { io } from "socket.io-client";
 import { randomUUID } from "crypto";
 
-const SOCKET_NAME = "module.beavers-ai-assistant";
+const SOCKET_NAME = "module.beavers-voice-transcript";
 
 export class BeaversClient {
   #url;
@@ -13,8 +13,8 @@ export class BeaversClient {
   /**
    * @param {object} options
    * @param {string} options.url        Foundry base URL, e.g. "http://localhost:30000"
-   * @param {string} options.userId     AI-Assistant user ID (from module Connection Info)
-   * @param {string} options.password   AI-Assistant password (from module Connection Info)
+   * @param {string} options.userId     Bot-Control user ID (from module Connection Info)
+   * @param {string} options.password   Bot-Control password (from module Connection Info)
    * @param {number} [options.timeout]  Request timeout in ms (default: 10000)
    */
   constructor({ url, userId, password, timeout = 10_000 }) {

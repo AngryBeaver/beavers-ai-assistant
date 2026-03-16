@@ -1,5 +1,5 @@
 {
-  "name": "beavers-ai-assistant-test",
+  "name": "beavers-voice-transcript-test",
   "version": "1.0.0",
   "type": "module",
   "private": true,
@@ -10,6 +10,6 @@
     "write-page": "node --env-file=.env client.mjs writeJournalPage"
   },
   "dependencies": {
-    "beavers-ai-assistant-client": "file:../client"
+    "beavers-voice-transcript-client": "file:../client"
   }
 }

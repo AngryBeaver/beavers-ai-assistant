@@ -1,4 +1,4 @@
-# beavers-ai-assistant — test client
+# beavers-voice-transcript — test client
 
 A standalone Node.js client to manually test the module's socket API against a running Foundry instance.
 
@@ -54,7 +54,7 @@ node --env-file=.env client.mjs writeJournalPage "My Journal" '{"name":"p1","tex
 
 1. POSTs to `/join` with your credentials to get a session cookie.
 2. Connects a `socket.io-client` using that cookie.
-3. Emits a request on `module.beavers-ai-assistant` with a correlation ID.
+3. Emits a request on `module.beavers-voice-transcript` with a correlation ID.
 4. Waits for the response with the matching ID and prints the result.
 
 Requires Node.js **v20.6+** (for `--env-file` support).

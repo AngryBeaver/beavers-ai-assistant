@@ -1,25 +1,25 @@
-# beavers-ai-assistant-client
+# beavers-voice-transcript-client
 
-Node.js client library for the [Beavers AI Assistant](https://github.com/AngryBeaver/beavers-ai-assistant) Foundry VTT module.
+Node.js client library for the [Beavers Voice Transcript](https://github.com/AngryBeaver/beavers-voice-transcript) Foundry VTT module.
 
 Allows external tools and AI agents to read and write Foundry VTT journal entries over a socket connection.
 
 ## Requirements
 
-- The **Beavers AI Assistant** module must be installed and running in Foundry VTT.
+- The **Beavers Voice Transcript** module must be installed and running in Foundry VTT.
 - A **Gamemaster must be connected** to the Foundry instance for the API to function.
-- A dedicated AI-Assistant user must be configured in the module settings (see Connection Info).
+- A dedicated Bot-Control user must be configured in the module settings (see Connection Info).
 
 ## Installation
 
 ```bash
-npm install beavers-ai-assistant-client
+npm install beavers-voice-transcript-client
 ```
 
 ## Usage
 
 ```js
-import { BeaversClient } from "beavers-ai-assistant-client";
+import { BeaversClient } from "beavers-voice-transcript-client";
 
 const client = new BeaversClient({
   url: "http://localhost:30000",
@@ -45,8 +45,8 @@ await client.disconnect();
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
 | `url` | `string` | — | Foundry base URL, e.g. `http://localhost:30000` |
-| `userId` | `string` | — | AI-Assistant user ID from module Connection Info |
-| `password` | `string` | — | AI-Assistant password from module Connection Info |
+| `userId` | `string` | — | Bot-Control user ID from module Connection Info |
+| `password` | `string` | — | Bot-Control password from module Connection Info |
 | `timeout` | `number` | `10000` | Request timeout in ms |
 
 ### `connect()` → `Promise<void>`

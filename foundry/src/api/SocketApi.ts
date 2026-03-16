@@ -18,7 +18,7 @@ interface SocketResponse {
  * Socket API for external tools using socket.io-client.
  *
  * External tool flow:
- *   1. GET  http://localhost:30000/join  → parse AI-Assistant userId from users list
+ *   1. GET  http://localhost:30000/join  → parse Bot-Control userId from users list
  *   2. POST http://localhost:30000/join  { userid, password, action:"join" }  → set-cookie
  *   3. Connect socket.io-client with that cookie
  *   4. Emit SOCKET_NAME with { id: uuid, action, args }

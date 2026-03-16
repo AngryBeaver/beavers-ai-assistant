@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * CLI for beavers-ai-assistant-client.
+ * CLI for beavers-voice-transcript-client.
  *
  * Usage (with .env file):
  *   node --env-file=.env ./src/cli.mjs <action> [args...]

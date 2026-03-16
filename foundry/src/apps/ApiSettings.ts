@@ -2,9 +2,9 @@ import { AI_ASSISTANT_USER_NAME, NAMESPACE, SETTINGS } from "../definitions.js";
 
 class AiAssistantApp extends foundry.applications.api.ApplicationV2<{ userId: string; password: string }> {
   static DEFAULT_OPTIONS = {
-    id: "beavers-ai-assistant-settings",
+    id: "beavers-voice-transcript-settings",
     window: {
-      title: "Beavers AI Assistant — Connection Info",
+      title: "Beavers Voice Transcript — Connection Info",
       resizable: false,
     },
     position: { width: 460 },

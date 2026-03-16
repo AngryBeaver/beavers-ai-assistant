@@ -1,4 +1,4 @@
-# Beaver's AI Assistant — Foundry VTT Module
+# Beaver's Voice Transcript — Foundry VTT Module
 
 A Foundry VTT module that exposes a socket API so external tools can read and write Journal entries.
 
@@ -7,7 +7,7 @@ A Foundry VTT module that exposes a socket API so external tools can read and wr
 Install via the Foundry module browser or paste the manifest URL:
 
 ```
-https://github.com/AngryBeaver/beavers-ai-assistant/releases/latest/download/module.json
+https://github.com/AngryBeaver/beavers-voice-transcript/releases/latest/download/module.json
 ```
 
 **Dependencies:** `socketlib`, `beavers-system-interface`
@@ -18,15 +18,15 @@ https://github.com/AngryBeaver/beavers-ai-assistant/releases/latest/download/mod
 
 ## Setup
 
-On first load the module automatically creates an **AI-Assistant** Foundry user (role: Assistant GM). The credentials for this user are shown in:
+On first load the module automatically creates an **Bot-Control** Foundry user (role: Assistant GM). The credentials for this user are shown in:
 
-> **Settings → Configure Settings → Beaver's AI Assistant → Connection Info**
+> **Settings → Configure Settings → Beaver's Voice Transcript → Connection Info**
 
 Copy the **User ID** and **Password** into your external tool's configuration. Regenerate the password any time from the same UI.
 
 ## Socket API
 
-External tools connect via `socket.io-client` and exchange messages on the `module.beavers-ai-assistant` channel.
+External tools connect via `socket.io-client` and exchange messages on the `module.beavers-voice-transcript` channel.
 
 ### Request format
 
@@ -55,12 +55,12 @@ External tools connect via `socket.io-client` and exchange messages on the `modu
 The easiest way to connect is via the companion npm package:
 
 ```js
-import { BeaversClient } from "beavers-ai-assistant-client";
+import { BeaversClient } from "beavers-voice-transcript-client";
 
 const client = new BeaversClient({
   url: "http://localhost:30000",
-  userId: "<AI-Assistant user ID>",
-  password: "<AI-Assistant password>",
+  userId: "<Bot-Control user ID>",
+  password: "<Bot-Control password>",
 });
 
 await client.connect();

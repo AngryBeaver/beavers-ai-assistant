@@ -33,7 +33,7 @@ async function ensureAiAssistantUser(): Promise<void> {
       const password = foundry.utils.randomID(32);
       await user.update({ password });
       await game.settings.set(NAMESPACE, SETTINGS.AI_ASSISTANT_PASSWORD, password);
-      console.log(`${NAMESPACE} | Regenerated AI-Assistant password`);
+      console.log(`${NAMESPACE} | Regenerated Bot-Control password`);
     }
   }
 }

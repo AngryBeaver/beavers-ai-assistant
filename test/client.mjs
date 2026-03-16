@@ -1,5 +1,5 @@
 /**
- * Test CLI — thin wrapper around beavers-ai-assistant-client.
+ * Test CLI — thin wrapper around beavers-voice-transcript-client.
  * Uses environment variables from .env for credentials.
  *
  * Run via npm scripts:
@@ -10,7 +10,7 @@
  *   npm run write-page -- "My Journal" '{"name":"p1","text":{"content":"<p>hi</p>"}}'
  */
 
-import { BeaversClient } from "beavers-ai-assistant-client";
+import { BeaversClient } from "beavers-voice-transcript-client";
 
 const url      = process.env.FOUNDRY_URL  ?? "http://localhost:30000";
 const userId   = process.env.FOUNDRY_USER ?? "";

@@ -1,10 +1,10 @@
 {
-  "name": "beavers-ai-assistant",
-  "title": "Beaver's AI Assistant",
+  "name": "beavers-voice-transcript",
+  "title": "Beaver's Voice Transcript",
   "version": "1.0.1",
   "description": "Exposes an API for external tools to interact with Foundry Journals.",
   "devDir": "c:\\vtts\\v13.348\\Data\\modules",
-  "main": "src/beavers-ai-assistant.js",
+  "main": "src/beavers-voice-transcript.js",
   "scripts": {
     "typecheck": "tsc --noEmit",
     "build": "node build.mjs build",
