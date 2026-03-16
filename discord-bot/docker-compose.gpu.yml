@@ -1,0 +1,23 @@
+# Standalone GPU compose for Nvidia users.
+# Run with: docker compose -f docker-compose.gpu.yml up -d
+#
+# Requires:
+#   - Nvidia GPU + drivers
+#   - NVIDIA Container Toolkit (https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html)
+
+services:
+  whisper:
+    image: onerahmet/openai-whisper-asr-webservice:v1.7.1-gpu
+    ports:
+      - "9000:9000"
+    environment:
+      - ASR_MODEL=${WHISPER_MODEL:-base}
+      - ASR_ENGINE=openai_whisper
+    restart: unless-stopped
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]

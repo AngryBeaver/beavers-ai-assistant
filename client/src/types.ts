@@ -1,8 +1,8 @@
 /**
- * API type contracts for the Foundry module socket API.
+ * API type contracts for the beavers-voice-transcript client.
  *
- * These interfaces mirror client/src/types.ts — keep them in sync when the
- * API changes.
+ * These interfaces mirror foundry/src/types.ts — keep them in sync when the
+ * Foundry module API changes.
  */
 
 export interface JournalPageData {
@@ -11,7 +11,7 @@ export interface JournalPageData {
   /** Page name/title. Required when creating a new page. */
   name?: string;
   /** Page type. Defaults to "text". */
-  type?: "text" | "image" | "pdf" | "video";
+  type?: 'text' | 'image' | 'pdf' | 'video';
   /** Text page content. Only relevant when type is "text". */
   text?: {
     /** Raw HTML content. */

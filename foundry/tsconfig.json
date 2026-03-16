@@ -1,19 +1,12 @@
 {
-	"compilerOptions": {
-		"target": "ESNext",
-		"module": "ESNext",
-		"lib": ["dom", "esnext"],
-		"types": ["jquery", "@league-of-foundry-developers/foundry-vtt-types","beavers-system-interface"],
-		"moduleResolution": "node",
-		"strict": true,
-		"esModuleInterop": true,
-		"allowJs": true,
-		"resolveJsonModule": true,
-		"skipLibCheck": true,
-	},
-	"include": ["src"],
-	"exclude": [
-		"node_modules",
-		"node_modules/beavers-system-interface/**/*"
-	]
+  "extends": "../tsconfig.base.json",
+  "compilerOptions": {
+    "module": "ESNext",
+    "lib": ["dom", "esnext"],
+    "types": ["jquery", "@league-of-foundry-developers/foundry-vtt-types", "beavers-system-interface"],
+    "moduleResolution": "node",
+    "allowJs": true
+  },
+  "include": ["src"],
+  "exclude": ["node_modules"]
 }
