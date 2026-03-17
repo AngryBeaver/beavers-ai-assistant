@@ -8,9 +8,9 @@ import {
 } from '@discordjs/voice';
 import * as prism from 'prism-media';
 import { VoiceBasedChannel } from 'discord.js';
-import { transcribe } from './whisper';
-import { appendTranscript, setPageName } from './foundry';
-import { detectCommand } from './commands';
+import { transcribe } from './whisper.js';
+import { appendTranscript, setPageName } from './foundry.js';
+import { detectCommand } from './commands.js';
 
 const SILENCE_TIMEOUT_MS = 1000;
 

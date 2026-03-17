@@ -9,6 +9,7 @@
 ![Setup Complexity](https://img.shields.io/badge/setup%20complexity-high-red)
 
 Automatically records spoken dialogue from your game sessions and writes it to Foundry VTT Journal entries in real time.
+The module is designed to work with the companion Discord bot.
 
 ---
 
@@ -49,7 +50,6 @@ https://github.com/AngryBeaver/beavers-voice-transcript/releases/latest/download
 
 **Required dependencies** (install via Foundry module browser):
 - `socketlib`
-- `beavers-system-interface`
 
 ---
 

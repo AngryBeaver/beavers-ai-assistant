@@ -1,7 +1,7 @@
 import 'dotenv/config';
 import { Client, GatewayIntentBits, Events } from 'discord.js';
-import { joinAndListen, leave } from './voice';
-import * as foundry from './foundry';
+import { joinAndListen, leave } from './voice.js';
+import * as foundry from './foundry.js';
 
 const client = new Client({
   intents: [
