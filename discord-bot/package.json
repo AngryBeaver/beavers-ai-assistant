@@ -25,7 +25,6 @@
     "beavers-voice-transcript-client": "*",
     "discord.js": "^14.25.1",
     "dotenv": "^17.3.1",
-
     "prism-media": "^1.3.5",
     "socket.io-client": "^4.8.3"
   }

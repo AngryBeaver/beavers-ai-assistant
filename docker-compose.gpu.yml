@@ -21,3 +21,13 @@ services:
             - driver: nvidia
               count: 1
               capabilities: [gpu]
+
+  discord-bot:
+    build:
+      dockerfile: ./Dockerfile
+    env_file: ./discord-bot/.env
+    environment:
+      - WHISPER_URL=http://whisper:9000
+      - FOUNDRY_URL=http://host.docker.internal:13348
+    depends_on:
+      - whisper
