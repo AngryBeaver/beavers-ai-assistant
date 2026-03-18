@@ -117,11 +117,3 @@ jobs:
           tags: |
             ${{ secrets.DOCKERHUB_USERNAME }}/discord-foundry-bot:${{ needs.release.outputs.version }}
             ${{ secrets.DOCKERHUB_USERNAME }}/discord-foundry-bot:latest
-
-      - name: Update Docker Hub description
-        uses: peter-evans/dockerhub-description@v4
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-          repository: ${{ secrets.DOCKERHUB_USERNAME }}/discord-foundry-bot
-          readme-filepath: ./discord-bot/README.md
