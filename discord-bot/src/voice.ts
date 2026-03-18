@@ -31,14 +31,22 @@ export async function joinAndListen(channel: VoiceBasedChannel): Promise<void> {
   console.log('[Voice] Paused — waiting for start command');
 
   const receiver = connection.receiver;
+  const activeUsers = new Set<string>();
 
   receiver.speaking.on('start', (userId) => {
+    if (activeUsers.has(userId)) return;
+    activeUsers.add(userId);
     const user = channel.guild.members.cache.get(userId)?.displayName ?? userId;
-    listenToUser(receiver, userId, user);
+    listenToUser(receiver, userId, user, () => activeUsers.delete(userId));
   });
 }
 
-function listenToUser(receiver: VoiceReceiver, userId: string, displayName: string): void {
+function listenToUser(
+  receiver: VoiceReceiver,
+  userId: string,
+  displayName: string,
+  onDone: () => void,
+): void {
   const opusStream = receiver.subscribe(userId, {
     end: { behavior: EndBehaviorType.AfterSilence, duration: SILENCE_TIMEOUT_MS },
   });
@@ -91,7 +99,9 @@ function listenToUser(receiver: VoiceReceiver, userId: string, displayName: stri
         console.log(`[PAUSED] [${displayName}]: ${transcript}`);
       }
     } catch (err) {
-      console.error(`[Voice] Processing error for ${displayName}: ${(err as Error).message}`);
+      console.error(`[Voice] Processing error for ${displayName}: ${(err as Error).message}`,err);
+    } finally {
+      onDone();
     }
   });
 }

@@ -2,6 +2,7 @@ const WHISPER_URL = process.env.WHISPER_URL ?? 'http://localhost:9000';
 const WHISPER_TASK = process.env.WHISPER_TASK ?? 'transcribe';
 const WHISPER_LANGUAGE = process.env.WHISPER_LANGUAGE ?? '';
 const WHISPER_INITIAL_PROMPT = process.env.WHISPER_INITIAL_PROMPT ?? '';
+const WHISPER_TIMEOUT_MS = parseInt(process.env.WHISPER_TIMEOUT_MS ?? '30000', 10);
 
 export async function transcribe(wavBuffer: Buffer): Promise<string> {
   const form = new FormData();
@@ -12,11 +13,18 @@ export async function transcribe(wavBuffer: Buffer): Promise<string> {
   if (WHISPER_INITIAL_PROMPT) params.set('initial_prompt', WHISPER_INITIAL_PROMPT);
 
   const url = `${WHISPER_URL}/asr?${params}`;
-  const response = await fetch(url, { method: 'POST', body: form });
+  const abort = new AbortController();
+  const timer = setTimeout(() => abort.abort(), WHISPER_TIMEOUT_MS);
 
-  if (!response.ok) {
-    throw new Error(`Whisper error ${response.status}: ${await response.text()}`);
+  try {
+    const response = await fetch(url, { method: 'POST', body: form, signal: abort.signal });
+
+    if (!response.ok) {
+      throw new Error(`Whisper error ${response.status}: ${await response.text()}`);
+    }
+
+    return (await response.text()).trim();
+  } finally {
+    clearTimeout(timer);
   }
-
-  return (await response.text()).trim();
 }

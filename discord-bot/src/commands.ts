@@ -49,7 +49,7 @@ export function detectCommand(transcript: string): Command | null {
 
   if (pageCmd && norm.includes(normalize(`${botName} ${pageCmd}`))) {
     // Extract page name from original transcript to preserve casing
-    const regex = new RegExp(`${escapeRegex(botName)}\\s+${escapeRegex(pageCmd)}\\s+(.+)`, 'i');
+    const regex = new RegExp(`${escapeRegex(botName)}\\W+${escapeRegex(pageCmd)}\\W+(.+)`, 'i');
     const match = transcript.match(regex);
     return { type: 'page', pageName: match?.[1]?.trim() };
   }

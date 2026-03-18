@@ -100,6 +100,7 @@ services:
 | `WHISPER_LANGUAGE` | Input language code, e.g. `de`, `en` — leave blank to auto-detect |
 | `WHISPER_TASK` | `transcribe` (keep language) or `translate` (output always English) |
 | `WHISPER_INITIAL_PROMPT` | Optional prompt to prime Whisper with expected words |
+| `WHISPER_TIMEOUT_MS` | Abort request after this many ms if Whisper hangs (default: `30000`) |
 
 #### Whisper model sizes
 

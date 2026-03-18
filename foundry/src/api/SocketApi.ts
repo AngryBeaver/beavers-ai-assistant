@@ -40,6 +40,7 @@ export class SocketApi {
 
   private static async onRequest(data: SocketRequest): Promise<void> {
     if (!data?.id || !data?.action) return;
+    if (!game.user.isGM) return;
 
     let result: unknown;
     let error: string | undefined;
@@ -66,7 +67,7 @@ export class SocketApi {
             data.args[0] as string,
             data.args[1] as string,
             data.args[2] as string,
-            data.args[3] as number | undefined,
+            (data.args[3] as number | null) ?? undefined,
           );
           break;
         default:

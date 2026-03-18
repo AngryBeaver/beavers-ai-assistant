@@ -11,8 +11,8 @@ services:
     ports:
       - "9000:9000"
     environment:
-      - ASR_MODEL=${WHISPER_MODEL:-base}
-      - ASR_ENGINE=openai_whisper
+      - ASR_MODEL=${WHISPER_MODEL:-medium}
+      - ASR_ENGINE=faster_whisper
     restart: unless-stopped
     deploy:
       resources:
@@ -27,7 +27,7 @@ services:
       dockerfile: ./Dockerfile
     env_file: ./discord-bot/.env
     environment:
-      - WHISPER_URL=http://whisper:9000
+      - WHISPER_URL=http://host.docker.internal:9000
       - FOUNDRY_URL=http://host.docker.internal:13348
     depends_on:
       - whisper

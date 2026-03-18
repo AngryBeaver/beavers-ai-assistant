@@ -39,7 +39,7 @@ export async function appendTranscript(username: string, text: string): Promise<
   try {
     if (!currentJournalId) {
       const journal = await client!.writeJournal({ name: sessionTitle(), folder: FOLDER_NAME });
-      currentJournalId = journal._id ?? null;
+      currentJournalId = journal?._id ?? journal?.id ?? null;
       console.log(`[Foundry] Created journal: ${sessionTitle()} (${currentJournalId})`);
     }
 

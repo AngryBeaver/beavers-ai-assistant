@@ -77,7 +77,8 @@ export class JournalApi {
         : null;
 
     if (journal) {
-      return journal.update(payload);
+      await journal.update(payload);
+      return journal;
     } else {
       // @ts-ignore
       return JournalEntry.create(payload);
