@@ -1,5 +1,6 @@
 import { AI_ASSISTANT_USER_NAME, NAMESPACE, SETTINGS } from './definitions.js';
 import { ApiSettings } from './apps/ApiSettings.js';
+import { ChatBubbleApi } from './modules/ChatBubbleApi.js';
 import { JournalApi } from './modules/JournalApi.js';
 import { SocketApi } from './api/SocketApi.js';
 
@@ -43,6 +44,7 @@ Hooks.once('socketlib.ready', () => {
   // @ts-ignore
   const socket = socketlib.registerModule(NAMESPACE);
 
+  socket.register('chatBubble', ChatBubbleApi.showBubble.bind(ChatBubbleApi));
   socket.register('listJournals', JournalApi.listJournals.bind(JournalApi));
   socket.register('readJournal', JournalApi.readJournal.bind(JournalApi));
   socket.register('writeJournal', JournalApi.writeJournal.bind(JournalApi));

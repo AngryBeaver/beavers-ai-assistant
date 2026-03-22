@@ -115,6 +115,15 @@ export class BeaversClient {
     return this.#request('writeJournalPage', [journalIdentifier, pageData]);
   }
 
+  /** Display a speech bubble on a token without sending a chat message. */
+  async chatBubble(
+    actorOrTokenName: string,
+    message: string,
+    options: { emote?: boolean } = {},
+  ): Promise<void> {
+    return this.#request('chatBubble', [actorOrTokenName, message, options]);
+  }
+
   /**
    * Append HTML to a transcript page. Auto-rotates to a new page when the
    * current one exceeds maxPageBytes (default 50 KB). Pages are named

@@ -35,6 +35,14 @@ function escapeHtml(str: string): string {
     .replace(/"/g, '&quot;');
 }
 
+export async function showChatBubble(username: string, text: string): Promise<void> {
+  try {
+    await client!.chatBubble(username, text);
+  } catch (err) {
+    console.error(`[Foundry] Failed to show chat bubble: ${(err as Error).message}`);
+  }
+}
+
 export async function appendTranscript(username: string, text: string): Promise<void> {
   try {
     if (!currentJournalId) {

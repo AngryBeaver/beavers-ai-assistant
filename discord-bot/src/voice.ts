@@ -9,7 +9,7 @@ import {
 import * as prism from 'prism-media';
 import { VoiceBasedChannel } from 'discord.js';
 import { transcribe } from './whisper.js';
-import { appendTranscript, setPageName } from './foundry.js';
+import { appendTranscript, setPageName, showChatBubble } from './foundry.js';
 import { detectCommand } from './commands.js';
 
 const SILENCE_TIMEOUT_MS = 1000;
@@ -47,12 +47,21 @@ function listenToUser(
   displayName: string,
   onDone: () => void,
 ): void {
+  let done = false;
+  const cleanup = () => {
+    if (!done) {
+      done = true;
+      onDone();
+    }
+  };
+
   const opusStream = receiver.subscribe(userId, {
     end: { behavior: EndBehaviorType.AfterSilence, duration: SILENCE_TIMEOUT_MS },
   });
 
   opusStream.on('error', (err) => {
     console.warn(`[Voice] Opus stream error for ${displayName}: ${err.message}`);
+    cleanup();
   });
 
   const pcmStream = opusStream.pipe(
@@ -61,12 +70,13 @@ function listenToUser(
 
   pcmStream.on('error', (err) => {
     console.warn(`[Voice] PCM stream error for ${displayName}: ${err.message}`);
+    cleanup();
   });
 
   buildWavBuffer(pcmStream, async (buffer) => {
-    if (buffer.length < 4096) return;
-
     try {
+      if (buffer.length < 4096) return;
+
       const transcript = await transcribe(buffer);
       if (!transcript) return;
 
@@ -94,14 +104,17 @@ function listenToUser(
 
       if (isRecording) {
         console.log(`[${displayName}]: ${transcript}`);
-        await appendTranscript(displayName, transcript);
+        await Promise.all([
+          appendTranscript(displayName, transcript),
+          showChatBubble(displayName, transcript),
+        ]);
       } else {
         console.log(`[PAUSED] [${displayName}]: ${transcript}`);
       }
     } catch (err) {
       console.error(`[Voice] Processing error for ${displayName}: ${(err as Error).message}`,err);
     } finally {
-      onDone();
+      cleanup();
     }
   });
 }

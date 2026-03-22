@@ -1,4 +1,5 @@
 import { NAMESPACE, SOCKET_NAME } from '../definitions.js';
+import { ChatBubbleApi, ChatBubbleOptions } from '../modules/ChatBubbleApi.js';
 import { JournalApi } from '../modules/JournalApi.js';
 import { JournalData, JournalPageData } from '../types';
 
@@ -68,6 +69,13 @@ export class SocketApi {
             data.args[1] as string,
             data.args[2] as string,
             (data.args[3] as number | null) ?? undefined,
+          );
+          break;
+        case 'chatBubble':
+          result = await ChatBubbleApi.showBubble(
+            data.args[0] as string,
+            data.args[1] as string,
+            (data.args[2] as ChatBubbleOptions | undefined) ?? {},
           );
           break;
         default:

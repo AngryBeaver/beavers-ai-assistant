@@ -102,6 +102,44 @@ services:
 | `WHISPER_INITIAL_PROMPT` | Optional prompt to prime Whisper with expected words |
 | `WHISPER_TIMEOUT_MS` | Abort request after this many ms if Whisper hangs (default: `30000`) |
 
+#### Nvidia GPU setup
+
+Using a GPU is strongly recommended for medium and above. Follow these steps before starting the Whisper container.
+
+**1. Install the Nvidia driver**
+
+Download and install the latest Game Ready or Studio driver for your card from [nvidia.com/drivers](https://www.nvidia.com/drivers).
+
+**2. Check your CUDA version**
+
+After installing the driver, open a terminal and run:
+```bash
+nvidia-smi
+```
+The top-right corner shows the maximum CUDA version your driver supports, e.g. `CUDA Version: 12.4`.
+
+**3. Pick the right Whisper image tag**
+
+The GPU image requires a CUDA-compatible driver. Use the tag that matches your CUDA version:
+
+| CUDA version | Image tag |
+|---|---|
+| 12.x | `onerahmet/openai-whisper-asr-webservice:latest-gpu` |
+| 11.x | `onerahmet/openai-whisper-asr-webservice:v1.6.0-gpu` |
+
+If `nvidia-smi` shows CUDA 12.x, `latest-gpu` is fine. If you are on an older driver (CUDA 11.x), pin to the older tag.
+
+**4. Install the NVIDIA Container Toolkit**
+
+Required for Docker to access the GPU. Follow the official guide:
+[docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html)
+
+On Windows with Docker Desktop, enable **WSL 2 backend** and install the toolkit inside WSL.
+
+> If you share your GPU with a browser or other apps, consider setting your browser to use the integrated GPU (Windows Settings → System → Display → Graphics) to free up VRAM for Whisper.
+
+---
+
 #### Whisper model sizes
 
 Larger = more accurate, slower, more VRAM. On CPU all models are slow — GPU strongly recommended for medium and above.

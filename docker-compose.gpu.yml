@@ -11,7 +11,7 @@ services:
     ports:
       - "9000:9000"
     environment:
-      - ASR_MODEL=${WHISPER_MODEL:-medium}
+      - ASR_MODEL=${WHISPER_MODEL:-large-v3-turbo}
       - ASR_ENGINE=faster_whisper
     restart: unless-stopped
     deploy:
@@ -29,5 +29,6 @@ services:
     environment:
       - WHISPER_URL=http://host.docker.internal:9000
       - FOUNDRY_URL=http://host.docker.internal:13348
+      - WHISPER_TIMEOUT_MS=120000
     depends_on:
       - whisper
