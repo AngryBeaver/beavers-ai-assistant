@@ -17,9 +17,11 @@
     "format:check": "prettier --check \"src/**/*.ts\"",
     "tag": "git tag -d ${npm_package_name}_${npm_package_version} 2>/dev/null ; git tag ${npm_package_name}_${npm_package_version} && git push -f origin ${npm_package_name}_${npm_package_version}"
   },
+  "packageManager": "pnpm@10.33.0",
   "devDependencies": {
-    "@league-of-foundry-developers/foundry-vtt-types": "^13.346.0-beta.20250812191140",
+    "@league-of-foundry-developers/foundry-vtt-types": "^13.346.0-beta.20251209192131",
     "@types/archiver": "^7.0.0",
+    "@types/jquery": "^3.5.0",
     "@types/jest": "^30.0.0",
     "archiver": "^7.0.1",
     "chokidar": "^4.0.3",

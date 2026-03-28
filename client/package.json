@@ -17,6 +17,7 @@
   "bin": {
     "beavers-client": "./dist/cli.js"
   },
+  "packageManager": "pnpm@10.33.0",
   "scripts": {
     "prepare": "tsc",
     "build": "tsc",

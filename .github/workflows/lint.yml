@@ -16,19 +16,22 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - uses: pnpm/action-setup@v4
+
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
-          cache: "npm"
-          cache-dependency-path: foundry/package-lock.json
+          cache: "pnpm"
+          cache-dependency-path: pnpm-lock.yaml
 
-      - run: npm ci
+      - run: pnpm install --frozen-lockfile
+        working-directory: .
 
       - name: Typecheck
-        run: npm run typecheck
+        run: pnpm typecheck
 
       - name: Prettier
-        run: npm run format:check
+        run: pnpm format:check
 
   lint-discord-bot:
     runs-on: ubuntu-latest
@@ -39,22 +42,25 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - uses: pnpm/action-setup@v4
+
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
-          cache: "npm"
-          cache-dependency-path: discord-bot/package-lock.json
+          cache: "pnpm"
+          cache-dependency-path: pnpm-lock.yaml
 
-      - run: npm ci
+      - run: pnpm install --frozen-lockfile
+        working-directory: .
 
       - name: Typecheck
-        run: npm run typecheck
+        run: pnpm typecheck
 
       - name: ESLint
-        run: npm run lint
+        run: pnpm lint
 
       - name: Prettier
-        run: npm run format:check
+        run: pnpm format:check
 
   lint-client:
     runs-on: ubuntu-latest
@@ -65,19 +71,22 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - uses: pnpm/action-setup@v4
+
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
-          cache: "npm"
-          cache-dependency-path: client/package-lock.json
+          cache: "pnpm"
+          cache-dependency-path: pnpm-lock.yaml
 
-      - run: npm ci
+      - run: pnpm install --frozen-lockfile
+        working-directory: .
 
       - name: Typecheck
-        run: npm run typecheck
+        run: pnpm typecheck
 
       - name: ESLint
-        run: npm run lint
+        run: pnpm lint
 
       - name: Prettier
-        run: npm run format:check
+        run: pnpm format:check

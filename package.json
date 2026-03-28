@@ -1,7 +1,7 @@
 {
   "name": "beavers-voice-transcript-workspace",
   "private": true,
-  "workspaces": ["client", "discord-bot"],
+  "packageManager": "pnpm@10.33.0",
   "scripts": {
     "build:bot": "docker build -f Dockerfile -t discord-foundry-bot ."
   }

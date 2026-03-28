@@ -1,6 +1,6 @@
 services:
   whisper:
-    image: onerahmet/openai-whisper-asr-webservice:latest
+    image: whisper-asr-webservice:latest
     ports:
       - "9000:9000"
     environment:
@@ -15,7 +15,7 @@ services:
     env_file: ./discord-bot/.env
     environment:
       - WHISPER_URL=http://whisper:9000
-      - FOUNDRY_URL=host.docker.internal:13348
+      - FOUNDRY_URL=http://host.docker.internal:13348
     depends_on:
       - whisper
     restart: unless-stopped

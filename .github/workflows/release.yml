@@ -36,16 +36,19 @@ jobs:
           echo "tag=$VERSION" >> $GITHUB_OUTPUT
           echo "num=${VERSION#v}" >> $GITHUB_OUTPUT
 
+      - uses: pnpm/action-setup@v4
+
       - uses: actions/setup-node@v4
         with:
           node-version: "24"
-          cache: "npm"
-          cache-dependency-path: foundry/package-lock.json
+          cache: "pnpm"
+          cache-dependency-path: pnpm-lock.yaml
 
-      - run: npm ci
+      - run: pnpm install --frozen-lockfile
+        working-directory: .
 
       - name: Typecheck
-        run: npm run typecheck
+        run: pnpm typecheck
 
       - name: Bump version in package.json
         working-directory: .
@@ -54,7 +57,7 @@ jobs:
           npm pkg set version=${{ steps.version.outputs.num }} --prefix client
 
       - name: Build release zip
-        run: npm run release
+        run: pnpm release
 
       - name: Create GitHub release
         uses: softprops/action-gh-release@v2
@@ -83,17 +86,20 @@ jobs:
         with:
           ref: main
 
+      - uses: pnpm/action-setup@v4
+
       - uses: actions/setup-node@v4
         with:
           node-version: "24"
+          cache: "pnpm"
+          cache-dependency-path: pnpm-lock.yaml
 
-      - run: npm install -g npm@latest
-
-      - run: npm install
+      - run: pnpm install --frozen-lockfile
+        working-directory: .
 
       - run: npm pkg set version=${{ needs.release.outputs.version }}
 
-      - run: npm publish --provenance --access public
+      - run: pnpm publish --provenance --access public
 
   publish-docker:
     runs-on: ubuntu-latest
