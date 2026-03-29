@@ -19,7 +19,7 @@ Previously the Discord bot chose both the journal name and the folder. This mean
 Already specified in `foundry/SPEC-ai-suggestions.md` under "API Changes", with this update:
 
 - `writeSessionData` reads the session folder from the module setting `sessionJournalFolder` internally — **no folder parameter**
-- If `sessionJournalFolder` is not configured, the method throws a descriptive error
+- If `sessionJournalFolder` is empty or unset the method defaults to `"session"` and creates the folder if it does not exist
 - Signature: `writeSessionData(html: string, pageName?: string, maxPageBytes?: number)`
 - Register it as a socket method in `beavers-voice-transcript.ts`
 
@@ -80,7 +80,7 @@ Also remove:
 
 ## Migration Notes
 
-- The GM must configure `sessionJournalFolder` in the Foundry module settings before the Discord bot can write. If not set, `writeSessionData` throws and the bot logs an error.
+- `sessionJournalFolder` defaults to `"session"` — the Discord bot can write immediately without the GM explicitly configuring this setting. If the folder does not exist it is created automatically.
 - Existing journals named `YYYY-MM-DD — Discord Session` are unaffected
 - New journals will be named `YYYY-MM-DD — Session` in the configured folder
 - The AI GM Window reads from the same `sessionJournalFolder` setting — one source of truth

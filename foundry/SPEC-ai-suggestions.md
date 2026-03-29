@@ -12,17 +12,55 @@ Accepted suggestions are stored back into the world (actor flags) so the AI buil
 
 ## Settings (configured before use)
 
-Registered in `ApiSettings.ts`. If required settings are missing the panel shows an inline prompt to configure them before any AI call is made.
+All settings are managed through two custom `ApplicationV2` settings apps, registered as menu buttons in the Foundry module settings. There are no inline `config: true` fields — everything is stored as `config: false` and surfaced only through these two apps.
+
+### Voice Transcript settings app
+
+Opened via the **Voice Transcript → Configure** button in the module settings.
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `voiceTranscriptEnabled` | Boolean | `false` | Master switch. When enabled the `ai-assistant` Foundry user is created/maintained and the socket API starts listening. |
+| `sessionJournalFolder` | String | `session` | Folder where session journals are stored. Defaults to `session` if left empty; the folder is created automatically if it does not exist. |
+
+The app also shows the **AI Assistant Connection** section (read-only `FOUNDRY_USER` and `FOUNDRY_PASS` fields with copy buttons and a Regenerate Password button).
+
+**Enable behaviour:**
+- Toggling ON: `ensureAiAssistantUser()` runs immediately (user created if absent) and `SocketApi.start()` begins listening. Fires the `beavers-ai-assistant.voiceTranscriptEnabledChanged` hook.
+- Toggling OFF: `SocketApi.stop()` removes the socket listener. Fires the same hook.
+- On module startup (`ready` hook): if `voiceTranscriptEnabled` is true, the same startup sequence runs.
+
+### AI Assistant settings app
+
+Opened via the **AI Assistant → Configure** button in the module settings.
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `aiAssistantEnabled` | Boolean | `false` | Master switch. When enabled the AI GM Window button becomes available. |
+
+**ai-tool**
 
 | Key | Type | Default | Description |
 |---|---|---|---|
 | `claudeApiKey` | String (secret) | — | Anthropic API key. Required. |
 | `claudeModel` | String | `claude-sonnet-4-6` | Model ID. |
+
+**session**
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `sessionHistoryMessages` | Number | 30 | How many recent session messages to include in AI context. |
+
+The app displays an informational notice in the session section when Voice Transcript is not enabled, because session context requires the voice transcript to be running.
+
+> The summary journal is not configurable. It is always named `AI-Summary` inside the session folder (e.g. `session/AI-Summary`).
+
+**adventure**
+
+| Key | Type | Default | Description |
+|---|---|---|---|
 | `adventureJournalFolder` | String | — | Folder containing adventure/lore journals. Optional — see Adventure Journal Types below. |
-| `loreIndexJournalName` | String | `AI Lore Index` | Journal where the pre-built lore index is stored. Only used when `adventureJournalFolder` is configured. |
-| `sessionJournalFolder` | String | — | Folder containing session journals (one journal per day, named `YYYY-MM-DD — Session`). Required. |
-| `sessionHistoryMessages` | Number | 30 | How many recent session journal entries to include in context. |
-| `summaryJournalName` | String | `AI Session Summary` | Journal where AI-generated session summaries are stored. |
+| `adventureIndexJournalName` | String | `AI Adventure Index` | Journal where the pre-built adventure index is stored. Only used when `adventureJournalFolder` is configured. |
 
 ---
 
@@ -57,7 +95,7 @@ The panel is a persistent `ApplicationV2` window, GM-only.
 ```
 
 **Top-level controls** (always visible):
-- **Interact** — triggers the main AI loop (see below)
+- **Interact** — triggers the main AI loop (see below). **Hidden when Voice Transcript is not enabled** — the session journal is the primary context source, so Interact requires an active transcript feed. A short inline notice explains why and links to Voice Transcript settings.
 - **Session Summary** — triggers or shows the session summary (see below)
 
 **Response area** (appears after Interact):
@@ -68,6 +106,14 @@ The panel is a persistent `ApplicationV2` window, GM-only.
 - Accept
 
 The response area is replaced on each new Interact press.
+
+**Gate checks (evaluated when the window opens and when settings change):**
+
+| Condition | Effect |
+|---|---|
+| `aiAssistantEnabled` is false | Window cannot be opened (button absent) |
+| `claudeApiKey` is blank | Inline prompt to open AI Assistant settings |
+| `voiceTranscriptEnabled` is false | Interact button hidden; inline notice shown |
 
 ---
 
@@ -81,7 +127,7 @@ Triggered when GM presses **Interact**.
 |---|---|-----------------------------------------------------|
 | Active scene name + GM notes | `game.scenes.active` | Scene description gives location clue               |
 | Recent session chat | Session journal (last N entries per setting) | Discord bot writes here                             |
-| Session summary | Summary journal latest page | "Previously..." paragraph                           |
+| Session summary | `AI-Summary` journal in the session folder (latest page) | "Previously..." paragraph                           |
 | Adventure lore | All journals in the configured adventure folder | Searched for location + NPC matches + Story Content |
 
 Location awareness is scene-based for now.
@@ -110,7 +156,7 @@ If `adventureJournalFolder` is not set, the lore column is omitted from context 
 
 For pre-written adventures, a lore index is built once and reused on every Interact call. It contains only **stable world content** — what exists in the adventure as written. Current plot state, what the party has done, and where events stand belong in the session summary, not the index.
 
-**Structure stored in `loreIndexJournalName`:**
+**Structure stored in `adventureIndexJournalName`:**
 ```
 ## Locations
 - The Rusty Flagon (inn, Millhaven) — run by Aldric; common gathering spot for travellers
@@ -129,7 +175,7 @@ For pre-written adventures, a lore index is built once and reused on every Inter
 **Building the index:**
 - Triggered by a **Build Lore Index** button in the module settings
 - Claude reads all pages in `adventureJournalFolder` in a single call and produces the structured index
-- The result is written as a page in `loreIndexJournalName`
+- The result is written as a page in `adventureIndexJournalName`
 - A **Rebuild** button re-runs the same process to pick up edits to the adventure journals
 - One-time cost: a 50,000-word adventure ≈ ~$0.20 to index
 
@@ -343,6 +389,17 @@ npx vitest run
 - Multiple simultaneous persona suggestions
 - Voice output of accepted suggestions
 - Compendium-based adventure data (journals only for now)
+
+### Future: Interact without Voice Transcript
+
+When Voice Transcript is not enabled, the Interact button is hidden. A future version will show an alternative manual-input flow in its place:
+
+1. **Area dropdown** — GM selects a general area (derived from the active scene or a fixed list of scene names)
+2. **Actor list** — actors present in that area are listed; GM picks one or chooses "Create new actor"
+3. **Free text** — two short fields: *Why is this NPC here?* and *What is the party asking/telling them?*
+4. These inputs are passed to the Interact loop as the situation context instead of session journal chat
+
+This path allows the AI GM Window to be useful even without a live Discord voice transcript, at the cost of the GM providing context manually. It is deliberately out of scope until the core voice-transcript-based flow is stable.
 
 ---
 

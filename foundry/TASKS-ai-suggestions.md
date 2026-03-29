@@ -4,20 +4,46 @@ Build order for `SPEC-ai-suggestions.md`. Each step is independently testable be
 
 ---
 
-## Step 1 — Settings
+## Step 1 — Settings ✅
 
-- [ ] Add new setting keys to `definitions.ts`: `claudeApiKey`, `claudeModel`, `adventureJournalFolder`, `sessionJournalFolder`, `sessionHistoryMessages`, `summaryJournalName`, `loreIndexJournalName`
-- [ ] Register settings in `ApiSettings.ts` with correct types, defaults, and secret handling for `claudeApiKey`
-- [ ] Panel shows an inline prompt (not an error) when required settings (`claudeApiKey`, `sessionJournalFolder`) are missing
+Two custom `ApplicationV2` settings apps, each opened via a **Configure** menu button. No `config: true` inline fields.
+
+**`definitions.ts`**
+- [x] Export `HOOKS.VOICE_TRANSCRIPT_ENABLED_CHANGED` hook name constant
+- [x] Add `SETTINGS.VOICE_TRANSCRIPT_ENABLED`, `SETTINGS.AI_ASSISTANT_ENABLED`
+- [x] Add all other setting keys: `sessionJournalFolder`, `claudeApiKey`, `claudeModel`, `sessionHistoryMessages`, `adventureJournalFolder`, `adventureIndexJournalName`
+- [x] Export `SUMMARY_JOURNAL_NAME = 'AI-Summary'` as a fixed constant — summary journal always lives at `{sessionFolder}/AI-Summary`; not a setting
+
+**`apps/settings/VoiceTranscriptSettingsApp.ts`**
+- [x] Enable toggle, AI Assistant Connection section (FOUNDRY_USER, FOUNDRY_PASS, copy buttons, Regenerate), Session Folder
+- [x] On save: fires `HOOKS.VOICE_TRANSCRIPT_ENABLED_CHANGED` when enabled state changes
+
+**`apps/settings/AiAssistantSettingsApp.ts`**
+- [x] Enable toggle, AI Tool section (API key, model), Session section (context size + VT warning notice), Adventure section (folder, index name)
+
+**`apps/settings/Settings.ts`** (registration only — no app logic)
+- [x] All settings registered as `config: false`; two `registerMenu` buttons only
+- [x] `Settings.isConfigured()` returns true only when `aiAssistantEnabled && claudeApiKey` is set
+- [x] `Settings.isVoiceTranscriptEnabled()` helper
+
+**`beavers-ai-assistant.ts`**
+- [x] `ready` hook: only calls `ensureAiAssistantUser()` + `SocketApi.start()` when `voiceTranscriptEnabled` is true
+- [x] `Hooks.on(HOOKS.VOICE_TRANSCRIPT_ENABLED_CHANGED, ...)`: starts or stops socket and user at runtime without requiring reload
+
+**`AiGmWindow.ts`** (Step 2)
+- [ ] Window is only openable when `aiAssistantEnabled` is true
+- [ ] Interact button hidden + inline notice shown when `voiceTranscriptEnabled` is false
 
 ---
 
 ## Step 2 — Panel skeleton
 
 - [ ] Create `AiGmWindow.ts` as a GM-only `ApplicationV2` window
-- [ ] Renders top-level controls: **Interact** button and **Session Summary** button
+- [ ] Window button / keybind only available when `ApiSettings.isConfigured()` is true (`aiAssistantEnabled && claudeApiKey` set)
+- [ ] Renders top-level controls: **Session Summary** button always visible; **Interact** button visible only when `ApiSettings.isVoiceTranscriptEnabled()` is true
+- [ ] When Interact is hidden: show inline notice "Voice Transcript is not enabled — Interact requires a live session feed. Configure Voice Transcript to enable."
 - [ ] Empty response area below controls (placeholder)
-- [ ] Window opens from a keybind or module button; closes with [X]
+- [ ] Window closes with [X]
 - [ ] No AI logic yet — just layout and wiring
 
 ---
@@ -27,7 +53,7 @@ Build order for `SPEC-ai-suggestions.md`. Each step is independently testable be
 - [ ] Create `ContextBuilder.ts`
 - [ ] Reads active scene name + GM notes from `game.scenes.active`
 - [ ] Reads last N session journal entries (N from `sessionHistoryMessages` setting)
-- [ ] Reads latest page of summary journal (`summaryJournalName`)
+- [ ] Reads latest page of `AI-Summary` journal in the session folder (path: `{sessionJournalFolder}/AI-Summary`)
 - [ ] Reads actor flags (`flags["beavers-ai-assistant"]`) for known actors
 - [ ] Returns assembled prompt string
 - [ ] Handles missing/empty sources gracefully (missing scene notes, no summary yet, no actors)
@@ -89,7 +115,7 @@ Build order for `SPEC-ai-suggestions.md`. Each step is independently testable be
 
 - [ ] Create `SessionSummary.ts`
 - [ ] On module startup: find all journals in `sessionJournalFolder` without `flags["beavers-ai-assistant"].summarized: true`, skip the journal whose name starts with today's ISO date, summarise the rest
-- [ ] Write summary as a new dated page in `summaryJournalName`
+- [ ] Write summary as a new dated page in the `AI-Summary` journal inside the session folder
 - [ ] Mark processed journals with `summarized: true` flag
 - [ ] **Session Summary** button in panel triggers or shows the latest summary
 - [ ] Write unit tests in `SessionSummary.test.ts`
@@ -100,7 +126,7 @@ Build order for `SPEC-ai-suggestions.md`. Each step is independently testable be
 
 - [ ] Add **Build Lore Index** button to module settings
 - [ ] On click: read all pages in `adventureJournalFolder`, send to Claude in a single call, produce structured index (Locations, NPCs, Factions — stable world content only, no plot state)
-- [ ] Write index as a page in `loreIndexJournalName`
+- [ ] Write index as a page in `adventureIndexJournalName`
 - [ ] Add **Rebuild** button alongside Build — same flow, overwrites existing index
 - [ ] Plug lore index into `ContextBuilder`: if index exists, include it whole; if not, fall back to keyword-scored raw pages (budget: ~4,000 tokens)
 - [ ] If `adventureJournalFolder` is not configured, omit lore from context entirely
