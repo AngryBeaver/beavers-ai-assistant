@@ -2,7 +2,11 @@
 
 ## Goal
 
-A GM-only panel that acts as a narrative co-pilot. The GM presses one button and the AI reads the current game state, infers who the party is likely interacting with, and suggests a persona-accurate response from that NPC. The GM uses the suggestion as a reference when speaking to their players. Accepted suggestions are stored back into the world (actor flags, session journal) so the AI builds a persistent picture of the campaign over time.
+A GM-only panel that acts as a narrative co-pilot. 
+The GM presses one button and the AI reads the current game state, infers who the party is likely interacting with,
+and suggests a persona-accurate response from that NPC. 
+The GM uses the suggestion as a reference when speaking to their players that feeds back to the session journal.
+Accepted suggestions are stored back into the world (actor flags) so the AI builds a persistent picture of the campaign over time.
 
 ---
 
@@ -14,7 +18,8 @@ Registered in `ApiSettings.ts`. If required settings are missing the panel shows
 |---|---|---|---|
 | `claudeApiKey` | String (secret) | — | Anthropic API key. Required. |
 | `claudeModel` | String | `claude-sonnet-4-6` | Model ID. |
-| `adventureJournalFolder` | String | — | Folder name containing adventure/lore journals. Required. |
+| `adventureJournalFolder` | String | — | Folder containing adventure/lore journals. Optional — see Adventure Journal Types below. |
+| `loreIndexJournalName` | String | `AI Lore Index` | Journal where the pre-built lore index is stored. Only used when `adventureJournalFolder` is configured. |
 | `sessionJournalFolder` | String | — | Folder containing session journals (one journal per day, named `YYYY-MM-DD — Session`). Required. |
 | `sessionHistoryMessages` | Number | 30 | How many recent session journal entries to include in context. |
 | `summaryJournalName` | String | `AI Session Summary` | Journal where AI-generated session summaries are stored. |
@@ -42,8 +47,8 @@ The panel is a persistent `ApplicationV2` window, GM-only.
 │  │  pass through. What's it to ya?"   │  │
 │  └────────────────────────────────────┘  │
 │                                          │
-│  [Less Grumpy] [Friendlier]              │  ← persona mood adjustments
-│  [Shorter]     [More Detail]             │
+│  [colder] [warmer] [shorter] [details]   │  ← persona mood adjustments
+│  [info]   [trash]                        │
 │  [Regenerate]                            │
 │                                          │
 │  [✓ Accept]                              │  ← accept bar
@@ -72,27 +77,118 @@ Triggered when GM presses **Interact**.
 
 ### Step 1 — Assemble context
 
-| Data | Source | Notes |
-|---|---|---|
-| Active scene name + GM notes | `game.scenes.active` | Scene description gives location clue |
-| Recent session chat | Session journal (last N entries per setting) | Discord bot writes here |
-| Session summary | Summary journal latest page | "Previously..." paragraph |
-| Adventure lore | All journals in the configured adventure folder | Searched for location + NPC matches |
+| Data | Source | Notes                                               |
+|---|---|-----------------------------------------------------|
+| Active scene name + GM notes | `game.scenes.active` | Scene description gives location clue               |
+| Recent session chat | Session journal (last N entries per setting) | Discord bot writes here                             |
+| Session summary | Summary journal latest page | "Previously..." paragraph                           |
+| Adventure lore | All journals in the configured adventure folder | Searched for location + NPC matches + Story Content |
 
-Location awareness is scene-based for now. The session journal serves as a breadcrumb trail — as the party moves through scenes the journal naturally records it, giving the AI a picture of where they've been and where they likely are.
+Location awareness is scene-based for now.
+Session Summary identifies where they've been roughly at the start of this session and what they have already done.
+Session chat serves as a breadcrumb trail — as the party moves through scenes the journal naturally records it,
+giving the AI a picture of where they've been and where they likely are.
+
+#### Adventure journal types
+
+There are two distinct use cases for `adventureJournalFolder`, and the module behaves differently for each:
+
+**Pre-written adventure** (e.g. a published module loaded as journals)
+- The full adventure exists before play begins — NPCs, locations, factions are all written down
+- The lore index is the right tool here: a one-time Claude pass produces a compact structured summary covering stable world content only
+- The session summary tracks *where the party currently is* in the story; the lore index gives the AI the stable world map
+
+**Self-made / emergent adventure**
+- Journals are sparse forward-looking sketches; most of what happened is already in session journals
+- `adventureJournalFolder` can be left unconfigured — the module degrades gracefully
+- Session summary + actor flags alone are sufficient for emergent campaigns
+
+**Graceful degradation without adventure journals:**
+If `adventureJournalFolder` is not set, the lore column is omitted from context entirely. The AI works from scene notes, session chat, session summary, and actor flags alone.
+
+#### Lore index
+
+For pre-written adventures, a lore index is built once and reused on every Interact call. It contains only **stable world content** — what exists in the adventure as written. Current plot state, what the party has done, and where events stand belong in the session summary, not the index.
+
+**Structure stored in `loreIndexJournalName`:**
+```
+## Locations
+- The Rusty Flagon (inn, Millhaven) — run by Aldric; common gathering spot for travellers
+- Blackroot Farm — outlying farm north of Millhaven; owned by Jorin
+
+## NPCs
+- Aldric the Innkeeper — gruff, loyal, knows local gossip; soft spot for travellers in trouble
+- Mira the Barmaid — Aldric's niece, curious and talkative
+- Jorin the Farmer — hardworking, distrusts outsiders
+
+## Factions & Groups
+- Red Tooth Goblins — tribal raiders from the Ashwood; led by Skrix, motivated by hunger and fear
+- The Merchant Guild — controls trade in Millhaven; politically influential
+```
+
+**Building the index:**
+- Triggered by a **Build Lore Index** button in the module settings
+- Claude reads all pages in `adventureJournalFolder` in a single call and produces the structured index
+- The result is written as a page in `loreIndexJournalName`
+- A **Rebuild** button re-runs the same process to pick up edits to the adventure journals
+- One-time cost: a 50,000-word adventure ≈ ~$0.20 to index
+
+**Usage in Interact:**
+The full lore index (~1,000–2,000 tokens) is included in context on every call when `adventureJournalFolder` is configured. No per-call scoring or filtering needed — the index is compact enough to include whole.
+
+#### Lore filtering strategy (fallback — no index built)
+
+If `adventureJournalFolder` is configured but no lore index exists yet, the module falls back to keyword scoring until the GM builds the index.
+
+Pages are scored and selected to stay within a token budget (~4,000 tokens of lore per call).
+
+**Scoring (each journal page gets a relevance score):**
+1. Extract keywords from: active scene name, last 10 session chat entries, and any NPC names already in `game.actors`
+2. Count keyword hits per journal page (case-insensitive, partial word match)
+3. Pages with zero hits are excluded
+
+**Selection:**
+- Sort pages by score descending
+- Include pages in order until the lore budget is reached
+- If the confirmed NPC name (from Step 2) matches text in a page, that page is always included regardless of budget — prepended before the scored list
+
+**Budget:**
+- Default lore budget: 4,000 tokens (~3,000 words)
+- Estimation: `Math.ceil(text.length / 4)` characters-to-tokens — no tokenizer required
+
+**Consequence:** if journals are well-structured (one page per location or NPC), filtering is effective. Large undivided journals may hit the budget cap early — GMs should build the lore index or keep journals paginated by topic.
 
 ### Step 2 — Infer situation
 
 Claude is asked to:
 1. Identify what the party is currently doing based on scene + recent chat
-2. Identify the most likely NPC they are interacting with or about to interact with
-3. Search the adventure lore for that NPC's description, role, location
+2. Return 1–3 candidate interactions the party is most likely having, ranked by confidence. Each candidate includes **who** the NPC is and **what** the party appears to be asking or telling them.
+
+The panel replaces the response area with the candidate list:
+
+```
+┌──────────────────────────────────────────────────┐
+│ What's happening?                                │
+│                                                  │
+│  1. Aldric the Innkeeper — asking about a room   │
+│  2. Aldric the Innkeeper — asking about rumours  │
+│  3. Mira the Barmaid — ordering drinks           │
+│                                                  │
+│  [1] [2] [3]                                     │  ← GM clicks to confirm
+└──────────────────────────────────────────────────┘
+```
+
+If the AI is highly confident there is only one likely interaction, a single entry is shown — the GM still confirms it before the flow continues.
+
+The GM clicks a button to confirm their choice. Only then does the flow continue to Step 3.
 
 ### Step 3 — Resolve persona
 
 - Look up `game.actors` for an Actor matching the inferred NPC name
-- If found: read `actor.flags["beavers-voice-transcript"]` for personality data
+- If found: read `actor.flags["beavers-ai-assistant"]` for personality data
 - If not found: infer personality from adventure lore; Actor is created on Accept
+  - Search the adventure lore for what the NPC might have experienced based on the adventure if any
+  - Search the session summary for what had happened and what the NPC might have been through.
 
 ### Step 4 — Generate suggestion
 
@@ -109,13 +205,14 @@ Response streams into the panel.
 
 These re-call Claude with a modifier appended to the original prompt. They do not reassemble context — context is cached from the last Interact press.
 
-| Button | Modifier added to prompt |
-|---|---|
-| Less Grumpy | "Make the tone warmer and less hostile." |
-| Friendlier | "Make the persona more openly welcoming." |
-| Shorter | "Shorten to one sentence." |
-| More Detail | "Add more colour — dialect, gesture, or detail." |
-| Regenerate | Full re-call with same context, no modifier |
+| Button  | Modifier added to prompt                                                                                                                                  |
+|---------|-----------------------------------------------------------------------------------------------------------------------------------------------------------|
+| colder  | "Make the tone more hostile."                                                                                                                             |
+| warmer  | "Make the persona more openly welcoming."                                                                                                                 |
+| shorter | "make it shorter, less details"                                                                                                                           |
+| details | "Add more colour — dialect, gesture, or detail."                                                                                                          |
+| info    | "Increase the NPC's awareness of current events by one degree — reveal a slightly more specific or accurate detail."                                      |
+| trash   | "Decrease the NPC's awareness by one degree — make them less informed, and at the lowest level have them offer something unrelated or mildly misleading." |
 
 Buttons are shown only when a persona response is active. Different response types (future: plot hook, scene description) will have different button sets.
 
@@ -126,7 +223,7 @@ Buttons are shown only when a persona response is active. Different response typ
 When GM presses **Accept**:
 
 1. **Actor resolved:**
-   - If Actor already exists: update `flags["beavers-voice-transcript"]` with any personality data Claude inferred during this exchange
+   - If Actor already exists: update `flags["beavers-ai-assistant"]` with any personality data Claude inferred during this exchange
    - If Actor does not exist: create a new NPC Actor with name, and write flags with inferred personality
 
 2. **Actor flags schema:**
@@ -139,14 +236,23 @@ When GM presses **Accept**:
 }
 ```
 
-3. **Session journal entry:**
-   Append to the session journal a line such as:
+3. **pcHistory entry:**
+   Append a one-sentence summary of this exchange, including:
+   - The inferred interaction selected in Step 2 (who the NPC was + what the party was asking/telling them)
+   - A condensed version of the accepted response
    ```
-   [AI · Aldric the Innkeeper] "Aye, I've seen stranger folk pass through. What's it to ya?"
+   [2024-03-15 — Session] Aldric the Innkeeper, asked about a room: "Aye, I've a spare room upstairs, but it'll cost ya two silver."
    ```
-   This feeds back into context on the next Interact press.
+   This feeds back into context on the next Interact press so the AI knows what has already been said.
 
-4. The response area stays visible so the GM can read it to players. It is cleared on the next Interact press.
+4. **Session journal — written with ai-suggestion flag:**
+   The accepted suggestion is written to the session journal via `writeSessionData`, marked with a special flag so it is distinguishable from real GM speech:
+   ```
+   [AI suggestion | Aldric the Innkeeper] "Aye, I've a spare room upstairs, but it'll cost ya two silver."
+   ```
+   The entry includes the actor name (and actor ID if the actor was resolved or just created). The Discord bot will later capture what the GM actually said — that entry has no special flag and represents what really happened. On the next Interact press the AI sees both entries and treats the `ai-suggestion` entry as "proposed, not confirmed" — the gap between suggestion and actual GM speech is itself useful context for inferring what transpired.
+
+5. The response area stays visible so the GM can read it to players. It is cleared on the next Interact press.
 
 ---
 
@@ -246,7 +352,7 @@ npx vitest run
 
 2. **pcHistory** — Claude auto-generates a 1-sentence summary of the accepted exchange and appends it to `pcHistory` in the actor flags. GM does not need to do anything.
 
-3. **Session summary on startup** — runs silently in the background when the module loads. Each session has its own journal (Discord bot creates one per session). The current session journal is never read or summarized — the entire journal is skipped. Only journals from previous sessions are processed. The module tracks which journals have already been captured using a flag (`flags["beavers-voice-transcript"].summarized: true`) set on the journal (not individual pages) after it is processed. On startup: find all session journals in the session folder without that flag, skip the current one, summarize the rest, write the summary page, mark those journals as captured.
+3. **Session summary on startup** — runs silently in the background when the module loads. Each session has its own journal (Discord bot creates one per session). The current session journal is never read or summarized — the entire journal is skipped. Only journals from previous sessions are processed. The module tracks which journals have already been captured using a flag (`flags["beavers-ai-assistant"].summarized: true`) set on the journal (not individual pages) after it is processed. On startup: find all session journals in the session folder without that flag, skip the current one, summarize the rest, write the summary page, mark those journals as captured.
 
 **Current session detection:** the module owns the journal naming convention — `YYYY-MM-DD — Session`. The `writeSessionData` socket method (see API Changes below) generates this name internally. The AI identifies the current session journal by checking if the name starts with today's ISO date. All other journals in the session folder are past sessions.
 
@@ -270,6 +376,6 @@ writeSessionData(html: string, pageName?: string, maxPageBytes?: number): Promis
 - Appends HTML to the page (same auto-rotation logic as `appendJournalPage`)
 - `pageName` defaults to `"Transcript"`
 
-Registered in `beavers-voice-transcript.ts` as a socket method alongside the existing ones.
+Registered in `beavers-ai-assistant.ts` as a socket method alongside the existing ones.
 
 The client and Discord bot must be updated to use this method — see `SPEC-session-api-migration.md` in the project root.

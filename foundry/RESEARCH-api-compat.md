@@ -54,10 +54,10 @@ For a module that is purely using actors as data stores (flags only), the type m
 
 Flag API is the most stable part of Foundry. Recommended patterns:
 
-- **Read**: `actor.getFlag('beavers-voice-transcript', 'key')` — preferred over direct property access
-- **Write single key**: `actor.setFlag('beavers-voice-transcript', 'key', value)`
-- **Write whole schema**: `actor.update({ 'flags.beavers-voice-transcript.key': value })` using dot notation for nested writes
-- Avoid `actor.update({ flags: { 'beavers-voice-transcript': { ... } } })` for partial updates — it merges shallowly and can leave stale nested keys
+- **Read**: `actor.getFlag('beavers-ai-assistant', 'key')` — preferred over direct property access
+- **Write single key**: `actor.setFlag('beavers-ai-assistant', 'key', value)`
+- **Write whole schema**: `actor.update({ 'flags.beavers-ai-assistant.key': value })` using dot notation for nested writes
+- Avoid `actor.update({ flags: { 'beavers-ai-assistant': { ... } } })` for partial updates — it merges shallowly and can leave stale nested keys
 
 ### `socketlib`
 
@@ -79,7 +79,7 @@ Both `WorldCollection` instances. Standard methods (`get`, `getName`, `find`, `f
 
 ### `Hooks.once('socketlib.ready', ...)`
 
-Fires after `init`, before `ready`. Unchanged. Existing registration pattern in `beavers-voice-transcript.ts` is correct.
+Fires after `init`, before `ready`. Unchanged. Existing registration pattern in `beavers-ai-assistant.ts` is correct.
 
 ---
 

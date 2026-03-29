@@ -1,6 +1,11 @@
-# Beaver's Voice Transcript
+# Beaver's AI Assistant
 
-Records spoken dialogue during your Foundry VTT sessions and writes it to Journal entries — automatically, in real time.
+An AI-powered Foundry VTT companion with two features:
+
+| Feature | What it does |
+|---|---|
+| **AI GM Window** | GM-only panel that reads the current game state and suggests persona-accurate NPC responses, building a persistent picture of NPCs and campaign history over time |
+| **Voice Transcript** | Records spoken dialogue from your sessions and writes it to Foundry Journal entries in real time via a companion Discord bot |
 
 ## What's in this repo
 
@@ -11,10 +16,21 @@ Records spoken dialogue during your Foundry VTT sessions and writes it to Journa
 | [`client/`](./client) | *(Optional)* `beavers-voice-transcript-client` npm package — connect your own voice bot or tool to the module |
 | [`test/`](./test) | Local test CLI — quick manual testing against a running Foundry instance |
 
-## How it works
+## AI GM Window
+
+Press **Interact** in the GM panel and the AI:
+1. Reads the active scene, recent session chat, session summary, and adventure lore
+2. Presents 1–3 candidate interactions (NPC + what the party is asking) for the GM to confirm
+3. Streams a persona-accurate NPC response based on stored personality, history with the party, and current context
+
+Accepted responses are stored in actor flags. The AI builds a richer picture of each NPC over time.
+
+Requires an **Anthropic API key** — configured in module settings.
+
+## Voice Transcript
 
 1. Install the **Foundry module** (`foundry/`) in your Foundry VTT instance.
-2. The module auto-creates a **Bot-Control** user and shows its credentials in the module settings.
+2. The module auto-creates an **ai-assistant** user and shows its credentials in the module settings.
 3. Run the **Discord bot** (`discord-bot/`) — it joins your voice channel, transcribes speech via a local [Whisper](https://github.com/openai/whisper) instance, and writes transcripts to Foundry journals.
 
 The bot starts in **listen-only mode** and is controlled by voice commands:
@@ -26,8 +42,6 @@ The bot starts in **listen-only mode** and is controlled by voice commands:
 | `{BOT_NAME} {BOT_COMMAND_PAGE} <name>` | Switch to a new journal page named `<name>` |
 
 ## Using the client in your own tool
-
-The `client/` package is optional. Use it if you want to connect a different voice bot or external tool to the same Foundry module:
 
 ```ts
 import { BeaversClient } from 'beavers-voice-transcript-client';
@@ -44,6 +58,6 @@ await client.disconnect();
 
 ## Docs
 
+- [Foundry module setup, AI GM Window & socket API](./foundry/README.md)
 - [Discord bot setup & voice commands](./discord-bot/README.md)
-- [Foundry module setup & socket API reference](./foundry/README.md)
 - [Client package](./client/README.md)

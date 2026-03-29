@@ -5,7 +5,7 @@ declare namespace foundry {
 }
 
 interface BeaversAiGame extends foundry.Game {
-  'beavers-voice-transcript': {
+  'beavers-ai-assistant': {
     Settings: unknown;
     socket: unknown;
   };
@@ -14,5 +14,12 @@ interface BeaversAiGame extends foundry.Game {
 declare const game: BeaversAiGame;
 
 interface SettingConfig {
-  'beavers-voice-transcript.aiAssistantPassword': string;
+  'beavers-ai-assistant.aiAssistantPassword': string;
+  'beavers-ai-assistant.claudeApiKey': string;
+  'beavers-ai-assistant.claudeModel': string;
+  'beavers-ai-assistant.adventureJournalFolder': string;
+  'beavers-ai-assistant.sessionJournalFolder': string;
+  'beavers-ai-assistant.sessionHistoryMessages': number;
+  'beavers-ai-assistant.summaryJournalName': string;
+  'beavers-ai-assistant.loreIndexJournalName': string;
 }

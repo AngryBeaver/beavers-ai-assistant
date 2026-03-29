@@ -1,13 +1,13 @@
-import { AI_ASSISTANT_USER_NAME, NAMESPACE, SETTINGS } from '../definitions.js';
+import { AI_ASSISTANT_USER_NAME, DEFAULTS, NAMESPACE, SETTINGS } from '../definitions.js';
 
 class AiAssistantApp extends foundry.applications.api.ApplicationV2<{
   userId: string;
   password: string;
 }> {
   static DEFAULT_OPTIONS = {
-    id: 'beavers-voice-transcript-settings',
+    id: 'beavers-ai-assistant-settings',
     window: {
-      title: 'Beavers Voice Transcript — Connection Info',
+      title: 'Beavers ai assistant — Connection Info',
       resizable: false,
     },
     position: { width: 460 },
@@ -89,10 +89,17 @@ class AiAssistantApp extends foundry.applications.api.ApplicationV2<{
 
 export class ApiSettings {
   constructor() {
-    this.registerSettings();
+    this.registerConnectionSettings();
+    this.registerAiGmSettings();
   }
 
-  registerSettings() {
+  static isConfigured(): boolean {
+    const apiKey = game.settings.get(NAMESPACE, SETTINGS.CLAUDE_API_KEY) as string;
+    const sessionFolder = game.settings.get(NAMESPACE, SETTINGS.SESSION_JOURNAL_FOLDER) as string;
+    return !!apiKey && !!sessionFolder;
+  }
+
+  private registerConnectionSettings(): void {
     game.settings.register(NAMESPACE, SETTINGS.AI_ASSISTANT_PASSWORD, {
       scope: 'world',
       config: false,
@@ -107,6 +114,71 @@ export class ApiSettings {
       icon: 'fas fa-robot',
       type: AiAssistantApp,
       restricted: true,
+    });
+  }
+
+  private registerAiGmSettings(): void {
+    game.settings.register(NAMESPACE, SETTINGS.CLAUDE_API_KEY, {
+      name: 'Claude API Key',
+      hint: 'Anthropic API key used for AI GM suggestions. Required.',
+      scope: 'world',
+      config: true,
+      type: String,
+      default: '',
+    });
+
+    game.settings.register(NAMESPACE, SETTINGS.CLAUDE_MODEL, {
+      name: 'Claude Model',
+      hint: 'Model ID to use for AI GM suggestions.',
+      scope: 'world',
+      config: true,
+      type: String,
+      default: DEFAULTS.CLAUDE_MODEL,
+    });
+
+    game.settings.register(NAMESPACE, SETTINGS.SESSION_JOURNAL_FOLDER, {
+      name: 'Session Journal Folder',
+      hint: 'Folder containing session journals (one per day, named YYYY-MM-DD — Session). Required.',
+      scope: 'world',
+      config: true,
+      type: String,
+      default: '',
+    });
+
+    game.settings.register(NAMESPACE, SETTINGS.SESSION_HISTORY_MESSAGES, {
+      name: 'Session History Messages',
+      hint: 'How many recent session journal entries to include in AI context.',
+      scope: 'world',
+      config: true,
+      type: Number,
+      default: DEFAULTS.SESSION_HISTORY_MESSAGES,
+    });
+
+    game.settings.register(NAMESPACE, SETTINGS.SUMMARY_JOURNAL_NAME, {
+      name: 'Summary Journal Name',
+      hint: 'Journal where AI-generated session summaries are stored.',
+      scope: 'world',
+      config: true,
+      type: String,
+      default: DEFAULTS.SUMMARY_JOURNAL_NAME,
+    });
+
+    game.settings.register(NAMESPACE, SETTINGS.ADVENTURE_JOURNAL_FOLDER, {
+      name: 'Adventure Journal Folder',
+      hint: 'Folder containing adventure/lore journals. Optional — leave blank for emergent campaigns.',
+      scope: 'world',
+      config: true,
+      type: String,
+      default: '',
+    });
+
+    game.settings.register(NAMESPACE, SETTINGS.LORE_INDEX_JOURNAL_NAME, {
+      name: 'Lore Index Journal Name',
+      hint: 'Journal where the pre-built lore index is stored. Only used when Adventure Journal Folder is configured.',
+      scope: 'world',
+      config: true,
+      type: String,
+      default: DEFAULTS.LORE_INDEX_JOURNAL_NAME,
     });
   }
 }
