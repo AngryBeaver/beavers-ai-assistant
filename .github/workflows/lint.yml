@@ -33,6 +33,29 @@ jobs:
       - name: Prettier
         run: pnpm format:check
 
+  test-foundry:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./foundry
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "pnpm"
+          cache-dependency-path: pnpm-lock.yaml
+
+      - run: pnpm install --frozen-lockfile
+        working-directory: .
+
+      - name: Test
+        run: pnpm test
+
   lint-discord-bot:
     runs-on: ubuntu-latest
     defaults:

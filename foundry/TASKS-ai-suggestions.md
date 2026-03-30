@@ -50,52 +50,48 @@ Two custom `ApplicationV2` settings apps, each opened via a **Configure** menu b
 - [ ] Reads active scene name + GM notes from `game.scenes.active`
 - [ ] Reads last N session journal entries (N from `sessionHistoryMessages` setting)
 - [ ] Reads latest page of `AI-Summary` journal in the session folder (path: `{sessionJournalFolder}/AI-Summary`)
-- [ ] Reads actor flags (`flags["beavers-ai-assistant"]`) for known actors
+- [ ] Reads all actors from `game.actors` (name, type, description) — general world context; actor flags are persona-only and are NOT read here
+- [ ] If lore index is configured: reads lore index journal for NPC/location/faction entries; if not configured, falls back to keyword-scored raw lore pages
 - [ ] Returns assembled prompt string
-- [ ] Handles missing/empty sources gracefully (missing scene notes, no summary yet, no actors)
+- [ ] Handles missing/empty sources gracefully (missing scene notes, no summary yet, no actors, no lore)
 - [ ] Write unit tests in `ContextBuilder.test.ts` using `vi.stubGlobal` for `game.*`
 
 ---
 
-## Step 4 — First Claude call: candidates
+## Step 4 — Infer current interaction
 
-- [ ] Create `ClaudeApi.ts` with a `call()` method (non-streaming for now)
-- [ ] On **Interact** press: assemble context via `ContextBuilder`, send to Claude, ask for 1–3 candidate interactions (NPC + what party is asking/telling)
-- [ ] Replace response area with candidate selection list
-- [ ] Show 1–3 numbered entries; GM clicks a button to confirm
-- [ ] If only one candidate, still require GM confirmation before proceeding
+- [ ] Create `ClaudeApi.ts` with a `call()` method
+- [ ] On **Interact** press: send assembled context to Claude; ask Claude to infer what is currently happening and who the party is interacting with — returns 1–3 candidates (NPC name + what the party is asking or doing)
+- [ ] Replace response area with candidate list
+- [ ] GM selects one to confirm before proceeding
+- [ ] If only one candidate, still require GM confirmation
 
 ---
 
-## Step 5 — Persona resolution + streaming response
+## Step 5 — Persona resolution
 
 - [ ] Create `PersonaResolver.ts`
-- [ ] Look up `game.actors` for actor matching confirmed NPC name
-- [ ] If found: read `flags["beavers-ai-assistant"]` for personality data
-- [ ] If not found: infer personality from lore context; actor created later on Accept
-- [ ] Add `stream()` to `ClaudeApi.ts`
-- [ ] On GM confirmation: call Claude with resolved persona + confirmed interaction, stream response into panel
-- [ ] Show persona header (NPC name + confidence note) above streaming text
-- [ ] Show adjustment buttons and **Accept** once streaming completes
+- [ ] Look up `game.actors` for actor matching the confirmed NPC name
+- [ ] **Actor exists + flag exists** → persona already known; proceed directly to Step 6
+- [ ] **Actor exists + no flag + lore match** → Claude generates a persona based on the lore description; show persona summary to GM for approval; on GM approval write to `flags["beavers-ai-assistant"]`
+- [ ] **Actor exists + no flag + no lore match** → Claude infers a persona from general context (current scene, location, recent session history); show persona summary to GM for approval; on GM approval write to flag
+- [ ] **No actor + lore match** → same as above but also create the NPC actor on GM approval; show inline notification "Actor created: [name]"
+- [ ] **No actor + no lore match** → Claude generates persona from general context; GM approves; create actor and write flag
+- [ ] Persona approval UI: show generated persona in panel, **Approve** and **Edit** buttons; Edit opens an inline text area for GM to adjust before saving
 
 ---
 
-## Step 6 — Accept flow
+## Step 6 — NPC response
 
-- [ ] If actor exists: update `flags["beavers-ai-assistant"]` with any newly inferred personality data
-- [ ] If actor does not exist: create new NPC Actor with name, write flags
-- [ ] Show inline notification: "Actor created: [name]" — non-blocking, fades after a few seconds
-- [ ] Append to `pcHistory`: session journal name + inferred interaction + condensed accepted response
-- [ ] Write accepted suggestion to session journal via `writeSessionData` with `[AI suggestion | ActorName]` marker and actor ID
-- [ ] Response area stays visible after Accept; cleared on next Interact press
+- [ ] Call Claude with confirmed interaction + resolved persona + assembled context; ask what this NPC would say
+- [ ] Display response in the panel
+- [ ] Show persona header (NPC name) above the response text
 
 ---
 
-## Step 7 — Adjustment buttons
+## Step 7 — Adjust and accept
 
-- [ ] Show adjustment buttons only when a persona response is active
-- [ ] Cache context from the last Interact press (do not reassemble)
-- [ ] Wire each button to re-call Claude with its modifier appended:
+- [ ] Show adjustment buttons once response is complete:
   - **colder** — more hostile tone
   - **warmer** — more openly welcoming
   - **shorter** — shorter, less detail
@@ -103,7 +99,9 @@ Two custom `ApplicationV2` settings apps, each opened via a **Configure** menu b
   - **info** — increase NPC awareness by one degree
   - **trash** — decrease NPC awareness by one degree; at lowest, mildly misleading
   - **Regenerate** — full re-call, same context, no modifier
-- [ ] Streaming response replaces current suggestion in place
+- [ ] Each adjustment re-calls Claude with the modifier appended; response replaces current text in place; cache context from the last Interact press (do not reassemble)
+- [ ] Show **Accept** button alongside adjustment buttons
+- [ ] On **Accept**: write response to session journal via `writeSessionData` with `[AI suggestion | ActorName]` marker and actor ID; append to `pcHistory`; response area stays visible; cleared on next Interact press
 
 ---
 
@@ -131,5 +129,15 @@ Two custom `ApplicationV2` settings apps, each opened via a **Configure** menu b
 
 ## Vitest setup (do before Step 3)
 
-- [ ] Add `vitest` to `foundry/package.json` devDependencies
-- [ ] Confirm `npx vitest run` works in the `foundry/` directory
+- [x] Add `vitest` to `foundry/package.json` devDependencies
+- [x] Add `"test": "vitest run"` script to `foundry/package.json`
+- [x] Confirm `pnpm test` works in the `foundry/` directory
+
+---
+
+## GitHub Actions — CI
+
+- [x] Add `test-foundry` job to `.github/workflows/lint.yml`
+- [x] Trigger on push and pull request to `main`
+- [x] Steps: checkout → install pnpm → `pnpm install` → `pnpm test`
+- [x] Fail the workflow if any vitest test fails
