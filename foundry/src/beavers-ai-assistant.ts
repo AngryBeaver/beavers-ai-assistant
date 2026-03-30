@@ -1,5 +1,6 @@
 import { AI_ASSISTANT_USER_NAME, HOOKS, NAMESPACE, SETTINGS } from './definitions.js';
 import { Settings as ApiSettings } from './apps/settings/Settings.js';
+import { AiGmWindow } from './apps/AiGmWindow.js';
 import { ChatBubbleApi } from './modules/ChatBubbleApi.js';
 import { JournalApi } from './modules/JournalApi.js';
 import { SocketApi } from './api/SocketApi.js';
@@ -7,6 +8,17 @@ import { SocketApi } from './api/SocketApi.js';
 Hooks.once('init', async function () {
   game[NAMESPACE] = game[NAMESPACE] || {};
   game[NAMESPACE].Settings = new ApiSettings();
+
+  game.keybindings!.register(NAMESPACE, 'openAiGmWindow', {
+    name: 'Open AI GM Window',
+    hint: 'Opens the AI GM Window panel (GM only)',
+    editable: [],
+    restricted: true,
+    onDown: () => {
+      AiGmWindow.open();
+      return true;
+    },
+  });
 });
 
 Hooks.once('ready', async function () {
@@ -50,6 +62,26 @@ async function ensureAiAssistantUser(): Promise<void> {
     }
   }
 }
+
+// Scene control button — GM only.
+// In v13 the hook receives Record<string, Control>, not an array.
+Hooks.on(
+  'getSceneControlButtons',
+  (controls: Record<string, foundry.applications.ui.SceneControls.Control>) => {
+    if (!game.user.isGM) return;
+    const tokenLayer = controls['tokens'];
+    if (!tokenLayer) return;
+    tokenLayer.tools['ai-gm-window'] = {
+      name: 'ai-gm-window',
+      order: 99,
+      title: 'AI GM Window',
+      icon: 'bai-icon',
+      button: true,
+      visible: true,
+      onChange: () => AiGmWindow.open(),
+    };
+  },
+);
 
 // socketlib: Foundry-internal RPC (other modules, macros, GM permission elevation).
 // Always registered regardless of enabled state — these are general-purpose GM actions.

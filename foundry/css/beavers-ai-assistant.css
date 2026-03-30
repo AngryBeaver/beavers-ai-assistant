@@ -1,0 +1,57 @@
+/* ============================================================
+   Beavers AI Assistant — AI GM Window
+   ============================================================ */
+
+/* Custom module icon */
+.bai-icon::before {
+  content: '';
+  display: inline-block;
+  width: 1.4rem;
+  height: 1.4rem;
+  background-color: currentColor;
+  -webkit-mask: url('/modules/beavers-ai-assistant/icons/beavers-ai-assistant.svg') center / contain no-repeat;
+  -webkit-mask-mode: alpha;
+  mask: url('/modules/beavers-ai-assistant/icons/beavers-ai-assistant.svg') center / contain no-repeat;
+  mask-mode: alpha;
+  vertical-align: middle;
+}
+.ui-control.bai-icon::before {
+  margin: -5px;
+}
+
+.beavers-ai-gm-window {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 0.75rem;
+}
+
+/* Top-level controls row */
+.beavers-ai-controls {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.beavers-ai-controls button {
+  white-space: nowrap;
+}
+
+/* Inline notice shown when Voice Transcript is disabled */
+.beavers-ai-vt-notice {
+  flex: 1;
+  margin: 0;
+  padding: 0.4rem 0.6rem;
+  background: var(--color-level-warning-bg, #fff3cd);
+  border: 1px solid var(--color-level-warning, #e6ac00);
+  border-radius: 4px;
+  font-size: 0.8em;
+  color: var(--color-text-dark-primary, #333);
+  line-height: 1.4;
+}
+
+/* Response area — populated in later steps */
+.beavers-ai-response {
+  min-height: 3rem;
+}

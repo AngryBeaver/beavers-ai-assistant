@@ -1,0 +1,21 @@
+<div class="beavers-ai-gm-window">
+  <div class="beavers-ai-controls">
+    <button type="button" data-action="sessionSummary">
+      <i class="fas fa-book-open"></i> Session Summary
+    </button>
+    {{#if voiceTranscriptEnabled}}
+      <button type="button" data-action="interact">
+        <i class="fas fa-comments"></i> Interact
+      </button>
+    {{else}}
+      <p class="beavers-ai-vt-notice">
+        <i class="fas fa-triangle-exclamation"></i>
+        Voice Transcript is not enabled &mdash; Interact requires a live session feed.
+        Configure Voice Transcript to enable.
+      </p>
+    {{/if}}
+  </div>
+  <div class="beavers-ai-response">
+    {{! response area — populated in later steps }}
+  </div>
+</div>

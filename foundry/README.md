@@ -135,6 +135,16 @@ https://github.com/AngryBeaver/beavers-voice-transcript/releases/latest/download
 
 ---
 
+## AI-Assisted Development
+
+This project's code was generated entirely by AI (Claude). No production code was written by hand.
+
+All decisions — architecture, feature specifications, behaviour, and design — were made by the human author. Every line of generated code was reviewed, approved, and is understood by the author before being accepted into the project. The AI acted as a tool under human direction, not as an autonomous author.
+
+The MIT license and copyright apply in full to this project.
+
+---
+
 ## Development
 
 ```bash

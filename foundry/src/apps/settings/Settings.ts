@@ -100,7 +100,7 @@ export class Settings {
       name: 'AI Assistant',
       label: 'Configure',
       hint: 'Set up the Claude API key, context size, and adventure journals for the AI GM Window.',
-      icon: 'fas fa-robot',
+      icon: 'bai-icon',
       type: AiAssistantSettingsApp,
       restricted: true,
     });

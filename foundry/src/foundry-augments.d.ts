@@ -11,6 +11,14 @@ declare namespace foundry {
         // v14 rename of _replaceHTML
         _replaceContent(result: HTMLElement, content: HTMLElement, options: object): void;
       }
+
+      /**
+       * Mixin that adds Handlebars template rendering to ApplicationV2.
+       * Declare `static PARTS` with template paths; the mixin owns _renderHTML,
+       * _replaceHTML, and _replaceContent — do not override those in subclasses.
+       */
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      function HandlebarsApplicationMixin(Base: typeof ApplicationV2): typeof ApplicationV2;
     }
   }
 }

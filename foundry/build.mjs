@@ -23,6 +23,7 @@ const DIST = path.join(__dirname, "dist");
 const BUNDLE_DIR = path.join(__dirname, "package");
 const TEMPLATES_DIR = path.join(__dirname, "templates");
 const CSS_DIR = path.join(__dirname, "css");
+const ICONS_DIR = path.join(__dirname, "icons");
 const MODULE_JSON_SRC = path.join(__dirname, "module.json");
 
 const SRC_DIR = path.join(__dirname, "src");
@@ -123,6 +124,7 @@ async function copyAssets(outputRoot) {
   await Promise.all([
     copyDir(TEMPLATES_DIR, path.join(outputRoot, "templates")),
     copyDir(CSS_DIR, path.join(outputRoot, "css")),
+    copyDir(ICONS_DIR, path.join(outputRoot, "icons")),
     fsp.copyFile(path.join(__dirname, "LICENSE"), path.join(outputRoot, "LICENSE")).catch(() => {}),
     fsp.copyFile(path.join(__dirname, "README.md"), path.join(outputRoot, "README.md")).catch(() => {}),
   ]);
@@ -145,6 +147,7 @@ async function rimraf(dir) {
 const NON_TS_GLOBS = [
   path.join(__dirname, "css", "**"),
   path.join(__dirname, "templates", "**"),
+  path.join(__dirname, "icons", "**"),
   path.join(__dirname, "module.json"),
   path.join(__dirname, "package.json"),
   path.join(__dirname, "LICENSE"),
@@ -168,6 +171,10 @@ async function handleNonTsChange(filePath, outputRoot) {
   if (rel.startsWith("templates/")) {
     await copyDir(TEMPLATES_DIR, path.join(outputRoot, "templates")).catch(console.error);
     console.log("[watch] templates done");
+  }
+  if (rel.startsWith("icons/")) {
+    await copyDir(ICONS_DIR, path.join(outputRoot, "icons")).catch(console.error);
+    console.log("[watch] icons done");
   }
   if (rel === "LICENSE" || rel === "README.md") {
     await fsp.copyFile(filePath, path.join(outputRoot, path.basename(filePath))).catch(console.error);

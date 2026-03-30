@@ -29,22 +29,18 @@ Two custom `ApplicationV2` settings apps, each opened via a **Configure** menu b
 **`beavers-ai-assistant.ts`**
 - [x] `ready` hook: only calls `ensureAiAssistantUser()` + `SocketApi.start()` when `voiceTranscriptEnabled` is true
 - [x] `Hooks.on(HOOKS.VOICE_TRANSCRIPT_ENABLED_CHANGED, ...)`: starts or stops socket and user at runtime without requiring reload
-
-**`AiGmWindow.ts`** (Step 2)
-- [ ] Window is only openable when `aiAssistantEnabled` is true
-- [ ] Interact button hidden + inline notice shown when `voiceTranscriptEnabled` is false
-
 ---
 
-## Step 2 — Panel skeleton
+## Step 2 — Panel skeleton ✅
 
-- [ ] Create `AiGmWindow.ts` as a GM-only `ApplicationV2` window
-- [ ] Window button / keybind only available when `ApiSettings.isConfigured()` is true (`aiAssistantEnabled && claudeApiKey` set)
-- [ ] Renders top-level controls: **Session Summary** button always visible; **Interact** button visible only when `ApiSettings.isVoiceTranscriptEnabled()` is true
-- [ ] When Interact is hidden: show inline notice "Voice Transcript is not enabled — Interact requires a live session feed. Configure Voice Transcript to enable."
-- [ ] Empty response area below controls (placeholder)
-- [ ] Window closes with [X]
-- [ ] No AI logic yet — just layout and wiring
+- [x] Create `AiGmWindow.ts` as a GM-only `ApplicationV2` window
+- [x] Create Scene Control button / keybind setting to open the AiGmWindow (only GMs can see that button)
+- [x] SceneControl button / keybind will notify an error when not (`ApiSettings.isConfigured()` is true (`aiAssistantEnabled && claudeApiKey` set)).
+- [x] Renders top-level controls: **Session Summary** , **Interact** button visible only when `ApiSettings.isVoiceTranscriptEnabled()` is true
+- [x] When Interact is hidden: show inline notice "Voice Transcript is not enabled — Interact requires a live session feed. Configure Voice Transcript to enable."
+- [x] Empty response area below controls (placeholder)
+- [x] Window closes with [X]
+- [x] No AI logic yet — just layout and wiring
 
 ---
 
