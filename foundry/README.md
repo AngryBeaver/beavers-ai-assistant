@@ -5,19 +5,40 @@
 ![Download Count](https://img.shields.io/github/downloads/AngryBeaver/beavers-voice-transcript/total?color=green)
 
 ![AI Powered](https://img.shields.io/badge/AI-Claude-blueviolet)
+![Setup Complexity](https://img.shields.io/badge/setup%20complexity-5%2F5-red)
 
-A Foundry VTT module with two complementary features:
+An AI assistant is only as useful as the context it has. If a GM has to stop mid-session to explain who the party is, what just happened, and what the NPC's personality is — the AI is more burden than help.
+
+This module solves that. It listens to your sessions via Discord, transcribes everything, and feeds that history directly into the AI. By the time you ask it anything, it already knows what is going on.
+
+Two features work together to make this possible:
 
 1. **Voice Transcript** — records spoken dialogue from your game sessions and writes it to Foundry Journal entries in real time via a companion Discord bot.
 2. **AI GM Window** — a GM-only panel that reads the current game state and suggests persona-accurate NPC responses, building a persistent picture of the campaign over time.
 
 ---
 
-## ⚠ This module does not work fully standalone
+## ⚠ Requirements — Hard to Set Up
 
-The **Voice Transcript** feature requires an external voice bot. By itself that part of the module exposes a socket API that the bot connects to — it does nothing visible without it.
+> **Do not think you can just install this module and everything will work.**
+>
+> This module is aimed at skilled people who are comfortable with servers, Docker, APIs, and self-hosted infrastructure. If you have no idea what the requirements listed below are, this module is not for you.
+>
+> For everyone else: give your AI assistant this documentation and it will likely be able to guide you through the setup.
 
-The **AI GM Window** requires an Anthropic API key but works standalone inside Foundry with no external bot.
+### What you need before installing
+
+| Requirement | Details |
+|---|---|
+| **Discord account & own server** | The voice transcript feature uses a Discord bot in your own server to capture session audio. You need admin rights to add bots. |
+| **Local Docker environment** | Whisper ASR runs in a Docker container on your machine or a local server. You need Docker installed and running. |
+| **NVIDIA GPU with ≥ 8 GB VRAM** | Real-time speech-to-text at a usable accuracy level (Whisper `medium` or larger) requires a dedicated NVIDIA GPU. CPU transcription is too slow for live use. |
+| **Anthropic API key (Claude)** | The AI GM Window calls the Claude API. You need an account at [anthropic.com](https://anthropic.com) and a funded API key. |
+
+None of these are optional. The module has two features and each has hard dependencies:
+
+- **Voice Transcript** — requires Discord bot + Docker + Whisper + GPU
+- **AI GM Window** — requires Anthropic API key
 
 ---
 
