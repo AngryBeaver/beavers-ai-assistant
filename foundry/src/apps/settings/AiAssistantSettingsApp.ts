@@ -98,12 +98,18 @@ export class AiAssistantSettingsApp extends (foundry.applications.api.Handlebars
 
   static async _onSave(this: AiAssistantSettingsApp): Promise<void> {
     const enabled = (this.element.querySelector('#ai-enabled') as HTMLInputElement).checked;
-    const aiProvider = (this.element.querySelector('#ai-provider') as HTMLSelectElement).value || DEFAULTS.AI_PROVIDER;
+    const aiProvider =
+      (this.element.querySelector('#ai-provider') as HTMLSelectElement).value ||
+      DEFAULTS.AI_PROVIDER;
     const claudeApiKey = (
       this.element.querySelector('#ai-api-key') as HTMLInputElement
     ).value.trim();
-    const claudeModel = (this.element.querySelector('#claude-model') as HTMLInputElement).value.trim();
-    const localModel = (this.element.querySelector('#local-model') as HTMLSelectElement).value || DEFAULTS.LOCAL_MODEL;
+    const claudeModel = (
+      this.element.querySelector('#claude-model') as HTMLInputElement
+    ).value.trim();
+    const localModel =
+      (this.element.querySelector('#local-model') as HTMLSelectElement).value ||
+      DEFAULTS.LOCAL_MODEL;
     const localAiUrl = (
       this.element.querySelector('#ai-local-url') as HTMLInputElement
     ).value.trim();
@@ -120,11 +126,7 @@ export class AiAssistantSettingsApp extends (foundry.applications.api.Handlebars
     await game.settings.set(NAMESPACE, SETTINGS.CLAUDE_API_KEY, claudeApiKey);
     await game.settings.set(NAMESPACE, SETTINGS.CLAUDE_MODEL, claudeModel || DEFAULTS.CLAUDE_MODEL);
     await game.settings.set(NAMESPACE, SETTINGS.LOCAL_MODEL, localModel || DEFAULTS.LOCAL_MODEL);
-    await game.settings.set(
-      NAMESPACE,
-      SETTINGS.LOCAL_AI_URL,
-      localAiUrl || DEFAULTS.LOCAL_AI_URL,
-    );
+    await game.settings.set(NAMESPACE, SETTINGS.LOCAL_AI_URL, localAiUrl || DEFAULTS.LOCAL_AI_URL);
     await game.settings.set(
       NAMESPACE,
       SETTINGS.SESSION_HISTORY_MESSAGES,

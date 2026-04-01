@@ -104,7 +104,7 @@ describe('LocalAiService', () => {
       expect(mockCreate).toHaveBeenCalledWith(
         expect.objectContaining({
           model: 'neural-chat',
-        })
+        }),
       );
     });
 
@@ -132,7 +132,7 @@ describe('LocalAiService', () => {
       expect(mockCreate).toHaveBeenCalledWith(
         expect.objectContaining({
           model: 'mistral',
-        })
+        }),
       );
     });
 
@@ -154,7 +154,7 @@ describe('LocalAiService', () => {
       const service = new LocalAiService(mockGame as any);
 
       await expect(service.call('system', 'user')).rejects.toThrow(
-        'Unexpected LocalAI response format'
+        'Unexpected LocalAI response format',
       );
     });
 
@@ -181,7 +181,7 @@ describe('LocalAiService', () => {
         expect.objectContaining({
           temperature: 0.2,
           max_tokens: 256,
-        })
+        }),
       );
     });
   });
@@ -338,7 +338,7 @@ describe('LocalAiService', () => {
               },
             ],
           };
-        })()
+        })(),
       );
 
       const service = new LocalAiService(mockGame as any);

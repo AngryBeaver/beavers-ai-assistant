@@ -28,9 +28,13 @@ describe.skipIf(skipIfNoApiKey)('ClaudeService (integration)', () => {
   });
 
   it('calls real Claude API and gets a text response', async () => {
-    const result = await service.call('You are a helpful assistant.', 'Say "Hello, World!" and nothing else.', {
-      max_tokens: 100,
-    });
+    const result = await service.call(
+      'You are a helpful assistant.',
+      'Say "Hello, World!" and nothing else.',
+      {
+        max_tokens: 100,
+      },
+    );
 
     expect(result).toBeTruthy();
     expect(typeof result).toBe('string');
@@ -43,7 +47,7 @@ describe.skipIf(skipIfNoApiKey)('ClaudeService (integration)', () => {
       'You are a concise assistant.',
       'Count from 1 to 3.',
       (chunk) => chunks.push(chunk),
-      { max_tokens: 50 }
+      { max_tokens: 50 },
     );
 
     expect(chunks.length).toBeGreaterThan(0);
@@ -55,7 +59,7 @@ describe.skipIf(skipIfNoApiKey)('ClaudeService (integration)', () => {
     const result = await service.call(
       'You are verbose.',
       'Tell me about Claude AI in great detail.',
-      { max_tokens: 50 }
+      { max_tokens: 50 },
     );
 
     // Very rough heuristic: 50 tokens is roughly 37-50 words
@@ -67,14 +71,13 @@ describe.skipIf(skipIfNoApiKey)('ClaudeService (integration)', () => {
     const creative = await service.call(
       'You are creative and random.',
       'Give a made-up animal name.',
-      { temperature: 0.9, max_tokens: 20 }
+      { temperature: 0.9, max_tokens: 20 },
     );
 
-    const conservative = await service.call(
-      'You are factual and conservative.',
-      'What is 2+2?',
-      { temperature: 0.1, max_tokens: 20 }
-    );
+    const conservative = await service.call('You are factual and conservative.', 'What is 2+2?', {
+      temperature: 0.1,
+      max_tokens: 20,
+    });
 
     expect(creative).toBeTruthy();
     expect(conservative).toContain('4');

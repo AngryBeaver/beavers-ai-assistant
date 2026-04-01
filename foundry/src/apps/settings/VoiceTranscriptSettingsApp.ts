@@ -34,7 +34,6 @@ export class VoiceTranscriptSettingsApp extends (foundry.applications.api.Handle
     return { enabled, userId: user?.id ?? '—', password };
   }
 
-
   static async _onCopyUserId(this: VoiceTranscriptSettingsApp): Promise<void> {
     // @ts-ignore
     const user = game.users.find((u: any) => u.name === AI_ASSISTANT_USER_NAME);

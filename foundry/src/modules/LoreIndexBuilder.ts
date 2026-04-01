@@ -1,4 +1,10 @@
-import { NAMESPACE, SETTINGS, DEFAULTS, MODULE_FOLDER_NAME, LORE_INDEX_JOURNAL_NAME } from '../definitions.js';
+import {
+  NAMESPACE,
+  SETTINGS,
+  DEFAULTS,
+  MODULE_FOLDER_NAME,
+  LORE_INDEX_JOURNAL_NAME,
+} from '../definitions.js';
 import { AiService, createAiService } from '../services/index.js';
 import { GameData, FolderData } from './ContextBuilder.js';
 import { JournalApi } from './JournalApi.js';
@@ -159,7 +165,9 @@ Produce the index as markdown. Start directly with ## Part 1 or ## World if ther
       );
 
       if (!modFolder) {
-        throw new Error(`Module folder "${MODULE_FOLDER_NAME}" not found. It should be created automatically.`);
+        throw new Error(
+          `Module folder "${MODULE_FOLDER_NAME}" not found. It should be created automatically.`,
+        );
       }
 
       // Find or create the lore index journal

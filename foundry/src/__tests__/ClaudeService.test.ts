@@ -96,7 +96,7 @@ describe('ClaudeService', () => {
       expect(mockCreate).toHaveBeenCalledWith(
         expect.objectContaining({
           model: 'claude-3-opus-20240229',
-        })
+        }),
       );
     });
 
@@ -105,7 +105,9 @@ describe('ClaudeService', () => {
 
       const service = new ClaudeService(mockGame as any);
 
-      await expect(service.call('system', 'user')).rejects.toThrow('Claude API key is not configured');
+      await expect(service.call('system', 'user')).rejects.toThrow(
+        'Claude API key is not configured',
+      );
     });
 
     it('throws error for unexpected response format', async () => {
@@ -113,12 +115,16 @@ describe('ClaudeService', () => {
         id: 'msg_test',
         type: 'message',
         role: 'assistant',
-        content: [{ type: 'image', source: { type: 'base64', media_type: 'image/png', data: '...' } }],
+        content: [
+          { type: 'image', source: { type: 'base64', media_type: 'image/png', data: '...' } },
+        ],
       });
 
       const service = new ClaudeService(mockGame as any);
 
-      await expect(service.call('system', 'user')).rejects.toThrow('Unexpected Claude response format');
+      await expect(service.call('system', 'user')).rejects.toThrow(
+        'Unexpected Claude response format',
+      );
     });
 
     it('respects custom temperature and max_tokens', async () => {
@@ -140,7 +146,7 @@ describe('ClaudeService', () => {
         expect.objectContaining({
           temperature: 0.3,
           max_tokens: 500,
-        })
+        }),
       );
     });
   });
@@ -236,7 +242,7 @@ describe('ClaudeService', () => {
             type: 'content_block_delta',
             delta: { type: 'text_delta', text: 'response' },
           };
-        })()
+        })(),
       );
 
       const service = new ClaudeService(mockGame as any);

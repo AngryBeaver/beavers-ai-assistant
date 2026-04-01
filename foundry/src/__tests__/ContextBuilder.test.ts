@@ -45,12 +45,23 @@ describe('ContextBuilder — scene section', () => {
           fn({
             id: 'j1',
             name: 'Scene Note',
-            pages: { contents: [{ name: 'p1', text: { content: '<p>Room with <strong>treasure</strong>.</p>' } }] },
+            pages: {
+              contents: [
+                { name: 'p1', text: { content: '<p>Room with <strong>treasure</strong>.</p>' } },
+              ],
+            },
           } as any)
             ? ({
                 id: 'j1',
                 name: 'Scene Note',
-                pages: { contents: [{ name: 'p1', text: { content: '<p>Room with <strong>treasure</strong>.</p>' } }] },
+                pages: {
+                  contents: [
+                    {
+                      name: 'p1',
+                      text: { content: '<p>Room with <strong>treasure</strong>.</p>' },
+                    },
+                  ],
+                },
               } as any)
             : undefined,
         filter: () => [],

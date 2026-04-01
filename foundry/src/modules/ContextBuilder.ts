@@ -126,8 +126,7 @@ export class ContextBuilder {
   private _buildActorSection(actors: ActorData[]): string {
     if (!actors.length) return '';
     const lines = actors.map((a) => {
-      const desc =
-        a.system?.details?.biography?.value ?? a.system?.description?.value ?? '';
+      const desc = a.system?.details?.biography?.value ?? a.system?.description?.value ?? '';
       const snippet = desc ? `: ${stripHtml(desc).slice(0, 200)}` : '';
       return `- ${a.name} (${a.type})${snippet}`;
     });
