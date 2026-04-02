@@ -1,0 +1,105 @@
+<div class="beavers-lore-wizard standard-form" style="padding:1rem">
+
+  {{!-- ── Step: location ─────────────────────────────────────────────────── --}}
+  {{#if (eq step "location")}}
+
+  <p style="margin-top:0">
+    Select the folder or journal that contains your adventure content.
+    The wizard will analyse its structure and build a hierarchical lore index.
+  </p>
+
+  <div class="form-group">
+    <label for="wizard-location">Adventure Content:</label>
+    <div class="form-fields">
+      <select id="wizard-location" style="width:100%">
+        <option value="">(select…)</option>
+        {{#each locations}}
+          <option value="{{id}}" data-type="{{type}}">
+            {{#if (eq type "folder")}}[Folder]{{else}}[Journal]{{/if}} {{name}}
+          </option>
+        {{/each}}
+      </select>
+    </div>
+  </div>
+
+  <div style="display:flex;justify-content:flex-end;margin-top:1.25rem">
+    <button type="button" data-action="continueFromLocation">
+      Continue <i class="fas fa-arrow-right"></i>
+    </button>
+  </div>
+
+  {{/if}}
+
+  {{!-- ── Step: status ──────────────────────────────────────────────────── --}}
+  {{#if (eq step "status")}}
+
+  <p style="margin-top:0;font-size:.875em;color:var(--color-text-dark-secondary)">
+    <i class="fas {{#if (eq locationType "folder")}}fa-folder{{else}}fa-book{{/if}}"></i>
+    {{locationName}}
+  </p>
+
+  <fieldset style="margin:0 0 1rem;padding:.5rem .75rem">
+    <legend>Input estimate</legend>
+    <table style="width:100%;border-collapse:collapse;font-size:.875em">
+      <tr>
+        <td style="padding:.2rem .5rem .2rem 0;color:var(--color-text-dark-secondary)">Tokens (approx.)</td>
+        <td style="padding:.2rem 0;font-family:monospace">{{inputTokensFormatted}}</td>
+      </tr>
+      <tr>
+        <td style="padding:.2rem .5rem .2rem 0;color:var(--color-text-dark-secondary)">Claude Sonnet</td>
+        <td style="padding:.2rem 0;font-family:monospace">{{claudeCostEstimate}} <span style="font-size:.8em;opacity:.7">(approx. input cost — output shown per chapter)</span></td>
+      </tr>
+      <tr>
+        <td style="padding:.2rem .5rem .2rem 0;color:var(--color-text-dark-secondary)">LocalAI</td>
+        <td style="padding:.2rem 0">Free</td>
+      </tr>
+    </table>
+  </fieldset>
+
+  {{#if (eq indexStatus "none")}}
+
+    <div style="padding:.75rem;background:var(--color-level-info-bg,#e8f4fd);
+                border:1px solid var(--color-level-info,#4a90d9);border-radius:4px;
+                margin-bottom:1rem">
+      <i class="fas fa-circle-info"></i>
+      No lore index found for this adventure. Let's build one.
+    </div>
+
+    <div style="display:flex;justify-content:space-between;margin-top:1.25rem">
+      <button type="button" data-action="backToLocation">
+        <i class="fas fa-arrow-left"></i> Back
+      </button>
+      <button type="button" data-action="startBuild">
+        <i class="fas fa-wand-magic-sparkles"></i> Build Lore Index
+      </button>
+    </div>
+
+  {{else}}
+
+    <div style="padding:.75rem;background:var(--color-level-success-bg,#d4edda);
+                border:1px solid var(--color-level-success,#28a745);border-radius:4px;
+                margin-bottom:1rem">
+      <i class="fas fa-circle-check"></i>
+      A lore index exists for this adventure.
+    </div>
+
+    <div style="display:flex;flex-direction:column;gap:.5rem;margin-bottom:1.25rem">
+      <button type="button" data-action="startRebuild" style="width:100%">
+        <i class="fas fa-rotate"></i> Rebuild Chapters
+      </button>
+      <button type="button" data-action="startEnrichment" style="width:100%">
+        <i class="fas fa-map"></i> Update Map Enrichments
+      </button>
+    </div>
+
+    <div style="display:flex;justify-content:flex-start">
+      <button type="button" data-action="backToLocation">
+        <i class="fas fa-arrow-left"></i> Back
+      </button>
+    </div>
+
+  {{/if}}
+
+  {{/if}}
+
+</div>

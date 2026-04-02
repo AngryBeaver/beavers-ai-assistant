@@ -1,5 +1,6 @@
 import { DEFAULTS, NAMESPACE, SETTINGS } from '../../definitions.js';
 import { LoreIndexBuilder } from '../../modules/LoreIndexBuilder.js';
+import { LoreIndexWizard } from '../LoreIndexWizard.js';
 
 interface AiAssistantContext {
   enabled: boolean;
@@ -31,6 +32,7 @@ export class AiAssistantSettingsApp extends (foundry.applications.api.Handlebars
     actions: {
       save: AiAssistantSettingsApp._onSave,
       buildLoreIndex: AiAssistantSettingsApp._onBuildLoreIndex,
+      openLoreWizard: AiAssistantSettingsApp._onOpenLoreWizard,
       refreshModels: AiAssistantSettingsApp._onRefreshModels,
       installModel: AiAssistantSettingsApp._onInstallModel,
     },
@@ -202,5 +204,9 @@ export class AiAssistantSettingsApp extends (foundry.applications.api.Handlebars
       console.error('Lore index build failed:', err);
       ui.notifications.error(`Lore index build failed: ${(err as Error).message}`);
     }
+  }
+
+  static async _onOpenLoreWizard(_this: AiAssistantSettingsApp): Promise<void> {
+    LoreIndexWizard.open();
   }
 }

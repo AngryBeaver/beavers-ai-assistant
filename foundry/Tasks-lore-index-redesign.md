@@ -120,8 +120,7 @@ Where is your adventure content?
 [Continue]
 ```
 
-The selected item (folder or journal) is stored in wizard state. Max output tokens is also
-configured here (number input, default 16 384, replaces the removed settings field).
+The selected item (folder or journal) is stored in wizard state.
 
 **Step: State detection (after location selected)**
 
@@ -135,16 +134,17 @@ Inspect the lore index journal to determine what already exists for this adventu
 
 ---
 
-### Task 0.2 — Token / cost estimate
+### Task 0.2 — Token / cost estimate ✓ DONE
 
-Before model selection, collect all pages from the adventure folder and calculate:
-- Total character count
-- Estimated input tokens: `Math.ceil(chars / 4)`
-- For Claude: estimated cost at model's rate per 1M tokens (hardcoded approximate rate, labelled
-  as estimate)
-- For LocalAI: "Free (local inference)"
+After location is selected, collect all pages from the adventure content and display on the
+status screen:
+- Estimated input tokens: `Math.ceil(stripped_chars / 4)`
+- Claude Sonnet cost: input tokens × $3/1M (approximate, input only — labelled as such)
+- LocalAI: Free
 
-Show in the opening screen so the GM can make an informed choice before selecting a model.
+Per-chapter token estimates are shown live during the indexing pass (Task 0.5).
+No global max output tokens setting is needed — indexing is chapter-by-chapter so each call
+output is naturally bounded by one chapter's content.
 
 ---
 
@@ -270,6 +270,12 @@ Chapter 2 done. Next: Chapter 3 — The Sunken Temple.
 [Stop here] exits the indexing pass early. Chapters already indexed are kept. Overview is not
 generated until all (non-skipped) chapters are done.
 
+Before indexing each chapter, show its estimated input token count:
+```
+Chapter 2: The Goblin Den — ~3 400 input tokens
+[Index this chapter]  [Skip]  [Stop for now]
+```
+
 After all chapters: generate Overview page → show summary:
 ```
 ✓ Index complete — 3 chapters, 14 scenes.
@@ -332,7 +338,7 @@ In `AiAssistantSettingsApp`, replace the current Build Lore Index button with:
 All options open `LoreIndexWizard` — the wizard's Task 0.1 state detection handles routing to
 the correct starting screen.
 
-`loreIndexMaxTokens` remains in the settings form (controls the AI call budget used by the wizard).
+No token budget setting needed — indexing is chapter-by-chapter with a hardcoded 32 768 output limit per chapter call.
 
 ---
 
@@ -346,43 +352,45 @@ All Task 1.1 code changes have been reverted.
 
 ---
 
-### Task 1.2 — Redesign index output to three-tier multi-page
+### Task 1.2 — Redesign index output to three-tier multi-page (per-chapter calls)
 
 **Files:** `LoreIndexBuilder.ts`, `JournalApi.ts`
 
-Change `_writeIndex` so it writes multiple pages into `adventureIndexJournalName`:
+Add `indexChapter(chapterContent: string, chapterName: string): Promise<void>` and
+`indexOverview(overviewSource?: string): Promise<void>` methods. Each call handles one chapter
+and writes its pages immediately on completion.
 
-| Page name | Content |
-|---|---|
-| `Overview` | Global NPCs, factions, world context. Neutral. |
-| `Chapter: <name>` | Neutral arc summary — all scenes, stakes, themes. |
-| `Scene: <name>` | Full detail, sublocations flat list, NPCs present. Map layout appended here by enrichment. |
-
-AI output uses sentinel delimiters for splitting:
+One AI call per chapter produces Chapter + Scene pages using sentinel delimiters for splitting:
 
 ```
----OVERVIEW---
-...
 ---CHAPTER: The Road to Millhaven---
-...
+...chapter summary...
 ---SCENE: The Road Ambush---
-...
+...scene detail...
+---SCENE: The Innkeeper---
+...scene detail...
 ```
 
 The builder splits on sentinels and writes each block as a separate journal page.
-Pages are written incrementally so partial results survive if the wizard is stopped early.
+Per-chapter output is naturally bounded (5–15 scenes × ~500 tokens) — no configurable
+max tokens needed. Use a generous hardcoded per-chapter output limit of 32 768.
+
+The overview call takes already-written chapter summary pages as input (small) plus optional
+intro/background source content, and writes the `Overview` page.
+
+Pages are written incrementally so chapters already indexed survive if the wizard is stopped.
+
+| Page name | Content |
+|---|---|
+| `Overview` | Global NPCs, factions, world context. Written last from chapter summaries. |
+| `Chapter: <name>` | Neutral arc summary — all scenes, stakes, themes. |
+| `Scene: <name>` | Full detail, sublocations flat list, NPCs present. Map layout appended by enrichment. |
 
 ---
 
-### Task 1.3 — Multi-call fallback for very large modules
+### Task 1.3 — ~~Multi-call fallback~~ NOT NEEDED
 
-**File:** `LoreIndexBuilder.ts`
-
-If total input content exceeds ~200 000 chars (~50 000 tokens), switch to per-chapter calls:
-1. One AI call per chapter → Chapter page + Scene pages for that chunk
-2. Final call across all chapter summaries → Overview page
-
-Fits within Qwen3.5-9B's 262k context window even for large published adventures.
+Per-chapter calls are now the only approach — not a fallback. Removed.
 
 ---
 

@@ -201,28 +201,49 @@ async function cmdDev() {
   console.log("[dev] done →", dest);
 }
 
+async function startEsbuildWatch(outputRoot) {
+  const ctx = await esbuild.context(esbuildOptions(outputRoot));
+  await ctx.watch();
+  return ctx;
+}
+
+async function watchTs(outputRoot, getCurrentCtx, setCtx) {
+  chokidar
+    .watch(path.join(SRC_DIR, "**", "*.ts"), { ignoreInitial: true })
+    .on("add", async (filePath) => {
+      console.log(`[watch] new TS file: ${path.relative(__dirname, filePath)} — restarting esbuild`);
+      await getCurrentCtx().dispose();
+      setCtx(await startEsbuildWatch(outputRoot));
+    })
+    .on("unlink", async (filePath) => {
+      console.log(`[watch] removed TS file: ${path.relative(__dirname, filePath)} — restarting esbuild`);
+      await getCurrentCtx().dispose();
+      setCtx(await startEsbuildWatch(outputRoot));
+    });
+}
+
 async function cmdWatch() {
   await rimraf(DIST);
-  const ctx = await esbuild.context(esbuildOptions(DIST));
-  await ctx.watch();
+  let ctx = await startEsbuildWatch(DIST);
   console.log("[watch] esbuild watching TypeScript…");
   await Promise.all([buildManifest(DIST), copyAssets(DIST)]);
   chokidar
     .watch(NON_TS_GLOBS, { ignoreInitial: true })
     .on("all", (_, filePath) => handleNonTsChange(filePath, DIST));
+  await watchTs(DIST, () => ctx, (c) => { ctx = c; });
   console.log("[watch] watching. Press Ctrl+C to stop.");
 }
 
 async function cmdDevWatch() {
   const dest = devDist();
   await rimraf(dest);
-  const ctx = await esbuild.context(esbuildOptions(dest));
-  await ctx.watch();
+  let ctx = await startEsbuildWatch(dest);
   console.log("[devwatch] esbuild watching TypeScript…");
   await Promise.all([buildManifest(dest), copyAssets(dest)]);
   chokidar
     .watch(NON_TS_GLOBS, { ignoreInitial: true })
     .on("all", (_, filePath) => handleNonTsChange(filePath, dest));
+  await watchTs(dest, () => ctx, (c) => { ctx = c; });
   console.log("[devwatch] watching →", dest, ". Press Ctrl+C to stop.");
 }
 
