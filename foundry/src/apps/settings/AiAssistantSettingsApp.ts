@@ -11,11 +11,13 @@ interface AiAssistantContext {
   claudeModel: string;
   localModel: string;
   localAiUrl: string;
+  installedLocalModels: string[];
+  localAiReachable: boolean;
   sessionHistoryMessages: number;
   adventureJournalFolder: string;
+  journalFolders: string[];
   defaultClaudeModel: string;
   defaultLocalAiUrl: string;
-  isBuilding?: boolean;
 }
 
 export class AiAssistantSettingsApp extends (foundry.applications.api.HandlebarsApplicationMixin(
@@ -29,6 +31,8 @@ export class AiAssistantSettingsApp extends (foundry.applications.api.Handlebars
     actions: {
       save: AiAssistantSettingsApp._onSave,
       buildLoreIndex: AiAssistantSettingsApp._onBuildLoreIndex,
+      refreshModels: AiAssistantSettingsApp._onRefreshModels,
+      installModel: AiAssistantSettingsApp._onInstallModel,
     },
   };
 
@@ -38,14 +42,10 @@ export class AiAssistantSettingsApp extends (foundry.applications.api.Handlebars
 
   async _onRender(_context: object, options: object): Promise<void> {
     await super._onRender(_context, options);
-
-    // Attach change listener to AI provider dropdown
     const providerSelect = this.element.querySelector('#ai-provider') as HTMLSelectElement;
     if (providerSelect) {
       providerSelect.addEventListener('change', this._onProviderChange.bind(this));
     }
-
-    // Initial show/hide based on current value
     this._updateProviderUI();
   }
 
@@ -56,20 +56,33 @@ export class AiAssistantSettingsApp extends (foundry.applications.api.Handlebars
   private _updateProviderUI(): void {
     const providerSelect = this.element.querySelector('#ai-provider') as HTMLSelectElement;
     const provider = providerSelect?.value || 'claude';
-
     const claudeSection = this.element.querySelector('#claude-section') as HTMLElement;
     const localAiSection = this.element.querySelector('#local-ai-section') as HTMLElement;
-
-    if (claudeSection) {
-      claudeSection.style.display = provider === 'claude' ? 'block' : 'none';
-    }
-    if (localAiSection) {
-      localAiSection.style.display = provider === 'local-ai' ? 'block' : 'none';
-    }
+    if (claudeSection) claudeSection.style.display = provider === 'claude' ? 'block' : 'none';
+    if (localAiSection) localAiSection.style.display = provider === 'local-ai' ? 'block' : 'none';
   }
 
   async _prepareContext(_options: object): Promise<AiAssistantContext> {
     const aiProvider = game.settings.get(NAMESPACE, SETTINGS.AI_PROVIDER) as string;
+    const localAiUrl =
+      (game.settings.get(NAMESPACE, SETTINGS.LOCAL_AI_URL) as string) || DEFAULTS.LOCAL_AI_URL;
+
+    let installedLocalModels: string[] = [];
+    let localAiReachable = false;
+
+    if (aiProvider === 'local-ai') {
+      try {
+        const response = await fetch(`${localAiUrl}/v1/models`);
+        if (response.ok) {
+          const data = (await response.json()) as any;
+          installedLocalModels = (data.data ?? []).map((m: any) => m.id as string);
+          localAiReachable = true;
+        }
+      } catch {
+        // LocalAI not running or unreachable
+      }
+    }
+
     return {
       enabled: game.settings.get(NAMESPACE, SETTINGS.AI_ASSISTANT_ENABLED) as boolean,
       voiceTranscriptEnabled: game.settings.get(
@@ -82,7 +95,9 @@ export class AiAssistantSettingsApp extends (foundry.applications.api.Handlebars
       claudeApiKey: game.settings.get(NAMESPACE, SETTINGS.CLAUDE_API_KEY) as string,
       claudeModel: game.settings.get(NAMESPACE, SETTINGS.CLAUDE_MODEL) as string,
       localModel: game.settings.get(NAMESPACE, SETTINGS.LOCAL_MODEL) as string,
-      localAiUrl: game.settings.get(NAMESPACE, SETTINGS.LOCAL_AI_URL) as string,
+      localAiUrl,
+      installedLocalModels,
+      localAiReachable,
       sessionHistoryMessages: game.settings.get(
         NAMESPACE,
         SETTINGS.SESSION_HISTORY_MESSAGES,
@@ -91,6 +106,9 @@ export class AiAssistantSettingsApp extends (foundry.applications.api.Handlebars
         NAMESPACE,
         SETTINGS.ADVENTURE_JOURNAL_FOLDER,
       ) as string,
+      journalFolders: (
+        (game.folders as any)?.filter((f: any) => f.type === 'JournalEntry' && !f.folder) ?? []
+      ).map((f: any) => f.name as string),
       defaultClaudeModel: DEFAULTS.CLAUDE_MODEL,
       defaultLocalAiUrl: DEFAULTS.LOCAL_AI_URL,
     };
@@ -118,8 +136,8 @@ export class AiAssistantSettingsApp extends (foundry.applications.api.Handlebars
       10,
     );
     const adventureJournalFolder = (
-      this.element.querySelector('#ai-adventure-folder') as HTMLInputElement
-    ).value.trim();
+      this.element.querySelector('#ai-adventure-folder') as HTMLSelectElement
+    ).value;
 
     await game.settings.set(NAMESPACE, SETTINGS.AI_ASSISTANT_ENABLED, enabled);
     await game.settings.set(NAMESPACE, SETTINGS.AI_PROVIDER, aiProvider);
@@ -135,16 +153,52 @@ export class AiAssistantSettingsApp extends (foundry.applications.api.Handlebars
     await game.settings.set(NAMESPACE, SETTINGS.ADVENTURE_JOURNAL_FOLDER, adventureJournalFolder);
 
     ui.notifications.info('✓ Settings saved.');
-    // Stay open so user can continue configuring without reopening the window
+  }
+
+  static async _onRefreshModels(this: AiAssistantSettingsApp): Promise<void> {
+    await this.render();
+  }
+
+  static async _onInstallModel(this: AiAssistantSettingsApp): Promise<void> {
+    const modelName = (
+      this.element.querySelector('#install-model-name') as HTMLInputElement
+    ).value.trim();
+
+    if (!modelName) {
+      ui.notifications.warn('Enter a model name to install.');
+      return;
+    }
+
+    const localAiUrl =
+      (game.settings.get(NAMESPACE, SETTINGS.LOCAL_AI_URL) as string) || DEFAULTS.LOCAL_AI_URL;
+
+    try {
+      const response = await fetch(`${localAiUrl}/models/apply`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: modelName }),
+      });
+
+      if (!response.ok) {
+        const err = (await response.json().catch(() => ({}))) as any;
+        throw new Error(err?.error || response.statusText);
+      }
+
+      ui.notifications.info(
+        `Installing "${modelName}" — this may take several minutes. Click Refresh when done.`,
+      );
+    } catch (err) {
+      ui.notifications.error(`Install failed: ${(err as Error).message}`);
+    }
   }
 
   static async _onBuildLoreIndex(this: AiAssistantSettingsApp): Promise<void> {
     try {
+      await AiAssistantSettingsApp._onSave.call(this);
       const builder = new LoreIndexBuilder(game as any);
       ui.notifications.info('Building lore index — please wait...');
       await builder.build();
       ui.notifications.info('✓ Lore index built successfully.');
-      await this.render();
     } catch (err) {
       console.error('Lore index build failed:', err);
       ui.notifications.error(`Lore index build failed: ${(err as Error).message}`);

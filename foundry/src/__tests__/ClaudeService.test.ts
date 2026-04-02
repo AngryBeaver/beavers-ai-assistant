@@ -2,259 +2,165 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { ClaudeService } from '../services/ClaudeService.js';
 import { NAMESPACE, SETTINGS } from '../definitions.js';
 
-// Mock the Anthropic SDK
-const mockCreate = vi.fn();
-const mockStream = vi.fn();
-
-vi.mock('@anthropic-ai/sdk', () => ({
-  Anthropic: vi.fn(() => ({
-    messages: {
-      create: mockCreate,
-      stream: mockStream,
-    },
-  })),
-}));
-
 const mockGame = {
   settings: {
     get: vi.fn(),
   },
 };
 
+function mockFetch(body: object, status = 200) {
+  return vi.fn().mockResolvedValue({
+    ok: status >= 200 && status < 300,
+    status,
+    statusText: status === 200 ? 'OK' : 'Error',
+    json: () => Promise.resolve(body),
+    body: null,
+  });
+}
+
+function mockStreamFetch(lines: string[]) {
+  const encoder = new TextEncoder();
+  const chunks = lines.map((l) => encoder.encode(l + '\n'));
+  let i = 0;
+  const reader = {
+    read: vi.fn().mockImplementation(() => {
+      if (i < chunks.length) return Promise.resolve({ done: false, value: chunks[i++] });
+      return Promise.resolve({ done: true, value: undefined });
+    }),
+  };
+  return vi.fn().mockResolvedValue({
+    ok: true,
+    status: 200,
+    body: { getReader: () => reader },
+    json: vi.fn(),
+  });
+}
+
 describe('ClaudeService', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockGame.settings.get.mockImplementation((ns, key) => {
-      if (key === SETTINGS.CLAUDE_API_KEY) return 'sk-ant-test-key-abc123';
+      if (key === SETTINGS.CLAUDE_API_KEY) return 'sk-ant-test-key';
       if (key === SETTINGS.CLAUDE_MODEL) return 'claude-3-sonnet-20240229';
       return undefined;
     });
   });
 
   afterEach(() => {
-    vi.clearAllMocks();
+    vi.unstubAllGlobals();
   });
 
   describe('call()', () => {
     it('returns text from Claude response', async () => {
-      // Actual documented response structure from Anthropic SDK
-      mockCreate.mockResolvedValue({
-        id: 'msg_1234567890abcdef',
-        type: 'message',
-        role: 'assistant',
-        content: [
-          {
-            type: 'text',
-            text: 'This is the Claude response',
-          },
-        ],
-        model: 'claude-3-sonnet-20240229',
-        stop_reason: 'end_turn',
-        stop_sequence: null,
-        usage: {
-          input_tokens: 10,
-          output_tokens: 25,
-        },
-      });
-
-      const service = new ClaudeService(mockGame as any);
-      const result = await service.call('You are a helpful assistant.', 'What is 2+2?', {
-        max_tokens: 1000,
-      });
-
-      expect(result).toBe('This is the Claude response');
-      expect(mockCreate).toHaveBeenCalledWith({
-        model: 'claude-3-sonnet-20240229',
-        max_tokens: 1000,
-        temperature: 0.7,
-        system: 'You are a helpful assistant.',
-        messages: [{ role: 'user', content: 'What is 2+2?' }],
-      });
-    });
-
-    it('uses settings to get model and API key', async () => {
-      mockGame.settings.get.mockImplementation((ns, key) => {
-        if (key === SETTINGS.CLAUDE_API_KEY) return 'sk-ant-custom-key';
-        if (key === SETTINGS.CLAUDE_MODEL) return 'claude-3-opus-20240229';
-        return undefined;
-      });
-
-      mockCreate.mockResolvedValue({
-        id: 'msg_test',
-        type: 'message',
-        role: 'assistant',
-        content: [{ type: 'text', text: 'response' }],
-        model: 'claude-3-opus-20240229',
-        stop_reason: 'end_turn',
-        stop_sequence: null,
-        usage: { input_tokens: 5, output_tokens: 10 },
-      });
-
-      const service = new ClaudeService(mockGame as any);
-      await service.call('system', 'user');
-
-      expect(mockCreate).toHaveBeenCalledWith(
-        expect.objectContaining({
-          model: 'claude-3-opus-20240229',
+      vi.stubGlobal(
+        'fetch',
+        mockFetch({
+          content: [{ type: 'text', text: 'Claude response' }],
         }),
       );
+
+      const service = new ClaudeService(mockGame as any);
+      const result = await service.call('system', 'user', { max_tokens: 1000 });
+
+      expect(result).toBe('Claude response');
     });
 
-    it('throws error when API key is not configured', async () => {
+    it('sends correct headers and body', async () => {
+      const fetchMock = mockFetch({ content: [{ type: 'text', text: 'ok' }] });
+      vi.stubGlobal('fetch', fetchMock);
+
+      const service = new ClaudeService(mockGame as any);
+      await service.call('my system', 'my user', { max_tokens: 500, temperature: 0.3 });
+
+      const [url, init] = fetchMock.mock.calls[0];
+      expect(url).toBe('https://api.anthropic.com/v1/messages');
+      expect(init.headers['x-api-key']).toBe('sk-ant-test-key');
+      expect(init.headers['anthropic-version']).toBe('2023-06-01');
+
+      const body = JSON.parse(init.body);
+      expect(body.system).toBe('my system');
+      expect(body.messages[0]).toEqual({ role: 'user', content: 'my user' });
+      expect(body.max_tokens).toBe(500);
+      expect(body.temperature).toBe(0.3);
+      expect(body.model).toBe('claude-3-sonnet-20240229');
+    });
+
+    it('throws when API key is missing', async () => {
       mockGame.settings.get.mockReturnValue(undefined);
 
       const service = new ClaudeService(mockGame as any);
-
       await expect(service.call('system', 'user')).rejects.toThrow(
         'Claude API key is not configured',
       );
     });
 
-    it('throws error for unexpected response format', async () => {
-      mockCreate.mockResolvedValue({
-        id: 'msg_test',
-        type: 'message',
-        role: 'assistant',
-        content: [
-          { type: 'image', source: { type: 'base64', media_type: 'image/png', data: '...' } },
-        ],
-      });
+    it('throws on non-ok response', async () => {
+      vi.stubGlobal('fetch', mockFetch({ error: { message: 'Unauthorized' } }, 401));
 
       const service = new ClaudeService(mockGame as any);
-
-      await expect(service.call('system', 'user')).rejects.toThrow(
-        'Unexpected Claude response format',
-      );
+      await expect(service.call('system', 'user')).rejects.toThrow('Claude API error 401');
     });
 
-    it('respects custom temperature and max_tokens', async () => {
-      mockCreate.mockResolvedValue({
-        id: 'msg_test',
-        type: 'message',
-        role: 'assistant',
-        content: [{ type: 'text', text: 'response' }],
-        model: 'claude-3-sonnet-20240229',
-        stop_reason: 'end_turn',
-        stop_sequence: null,
-        usage: { input_tokens: 5, output_tokens: 10 },
-      });
+    it('throws for unexpected response format', async () => {
+      vi.stubGlobal(
+        'fetch',
+        mockFetch({
+          content: [{ type: 'image' }],
+        }),
+      );
 
       const service = new ClaudeService(mockGame as any);
-      await service.call('system', 'user', { temperature: 0.3, max_tokens: 500 });
-
-      expect(mockCreate).toHaveBeenCalledWith(
-        expect.objectContaining({
-          temperature: 0.3,
-          max_tokens: 500,
-        }),
+      await expect(service.call('system', 'user')).rejects.toThrow(
+        'Unexpected Claude response format',
       );
     });
   });
 
   describe('stream()', () => {
     it('streams text chunks and returns full text', async () => {
-      // Mock async generator for streaming
-      const mockAsyncGen = async function* () {
-        yield {
-          type: 'content_block_start',
-          content_block: { type: 'text', text: '' },
-        };
-        yield {
-          type: 'content_block_delta',
-          delta: { type: 'text_delta', text: 'Hello' },
-        };
-        yield {
-          type: 'content_block_delta',
-          delta: { type: 'text_delta', text: ' world' },
-        };
-        yield {
-          type: 'message_stop',
-        };
-      };
-
-      mockStream.mockReturnValue(mockAsyncGen());
+      vi.stubGlobal(
+        'fetch',
+        mockStreamFetch([
+          'data: {"type":"content_block_delta","delta":{"type":"text_delta","text":"Hello"}}',
+          'data: {"type":"content_block_delta","delta":{"type":"text_delta","text":" world"}}',
+          'data: [DONE]',
+        ]),
+      );
 
       const service = new ClaudeService(mockGame as any);
       const chunks: string[] = [];
-      const result = await service.stream('system', 'user', (chunk) => chunks.push(chunk));
+      const result = await service.stream('system', 'user', (c) => chunks.push(c));
 
       expect(chunks).toEqual(['Hello', ' world']);
       expect(result).toBe('Hello world');
     });
 
-    it('ignores non-text-delta chunks', async () => {
-      const mockAsyncGen = async function* () {
-        yield {
-          type: 'content_block_start',
-          content_block: { type: 'text', text: '' },
-        };
-        yield {
-          type: 'content_block_delta',
-          delta: { type: 'text_delta', text: 'Part 1' },
-        };
-        yield {
-          type: 'message_delta',
-          delta: { stop_reason: 'end_turn' },
-        };
-        yield {
-          type: 'content_block_delta',
-          delta: { type: 'text_delta', text: ' Part 2' },
-        };
-      };
-
-      mockStream.mockReturnValue(mockAsyncGen());
-
-      const service = new ClaudeService(mockGame as any);
-      const chunks: string[] = [];
-      const result = await service.stream('system', 'user', (chunk) => chunks.push(chunk));
-
-      expect(chunks).toEqual(['Part 1', ' Part 2']);
-      expect(result).toBe('Part 1 Part 2');
-    });
-
-    it('calls onChunk callback for each chunk', async () => {
-      const mockAsyncGen = async function* () {
-        yield {
-          type: 'content_block_delta',
-          delta: { type: 'text_delta', text: 'chunk1' },
-        };
-        yield {
-          type: 'content_block_delta',
-          delta: { type: 'text_delta', text: 'chunk2' },
-        };
-      };
-
-      mockStream.mockReturnValue(mockAsyncGen());
-
-      const service = new ClaudeService(mockGame as any);
-      const onChunk = vi.fn();
-      await service.stream('system', 'user', onChunk);
-
-      expect(onChunk).toHaveBeenCalledTimes(2);
-      expect(onChunk).toHaveBeenNthCalledWith(1, 'chunk1');
-      expect(onChunk).toHaveBeenNthCalledWith(2, 'chunk2');
-    });
-
-    it('passes stream parameters to SDK', async () => {
-      mockStream.mockReturnValue(
-        (async function* () {
-          yield {
-            type: 'content_block_delta',
-            delta: { type: 'text_delta', text: 'response' },
-          };
-        })(),
+    it('ignores non-text-delta events', async () => {
+      vi.stubGlobal(
+        'fetch',
+        mockStreamFetch([
+          'data: {"type":"message_start"}',
+          'data: {"type":"content_block_delta","delta":{"type":"text_delta","text":"Only this"}}',
+          'data: {"type":"message_stop"}',
+        ]),
       );
 
       const service = new ClaudeService(mockGame as any);
-      await service.stream('system', 'user', () => {}, { temperature: 0.5, max_tokens: 2000 });
+      const chunks: string[] = [];
+      await service.stream('system', 'user', (c) => chunks.push(c));
 
-      expect(mockStream).toHaveBeenCalledWith({
-        model: 'claude-3-sonnet-20240229',
-        max_tokens: 2000,
-        temperature: 0.5,
-        system: 'system',
-        messages: [{ role: 'user', content: 'user' }],
-      });
+      expect(chunks).toEqual(['Only this']);
+    });
+
+    it('sends stream: true in body', async () => {
+      const fetchMock = mockStreamFetch([]);
+      vi.stubGlobal('fetch', fetchMock);
+
+      const service = new ClaudeService(mockGame as any);
+      await service.stream('system', 'user', () => {});
+
+      const body = JSON.parse(fetchMock.mock.calls[0][1].body);
+      expect(body.stream).toBe(true);
     });
   });
 });

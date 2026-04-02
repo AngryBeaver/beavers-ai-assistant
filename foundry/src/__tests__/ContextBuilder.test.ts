@@ -12,7 +12,7 @@ function makeGame(overrides: Partial<GameData> = {}): GameData {
     },
     scenes: { active: null },
     actors: { contents: [] },
-    folders: { find: () => undefined },
+    folders: { find: () => undefined, filter: () => [] },
     journal: { find: () => undefined, filter: () => [] },
     ...overrides,
   };

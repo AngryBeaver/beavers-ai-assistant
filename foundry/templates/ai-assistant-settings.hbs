@@ -56,24 +56,51 @@
           LocalAI/Ollama endpoint
         </p>
       </div>
+      {{#unless localAiReachable}}
+      <div style="padding:.5rem .75rem;background:var(--color-level-warning-bg,#fff3cd);
+                  border:1px solid var(--color-level-warning,#e6ac00);border-radius:4px;
+                  font-size:.875em;margin-bottom:.75rem">
+        <i class="fas fa-triangle-exclamation"></i>
+        <strong>LocalAI is not reachable.</strong>
+        Make sure your LocalAI server is running at <code>{{localAiUrl}}</code>.
+      </div>
+      {{/unless}}
+
       <div class="form-group">
-        <label>Model Name:</label>
+        <label>Active Model:</label>
         <div class="form-fields">
-          <select id="local-model" name="localModel" data-dtype="String" style="width:100%">
-            <option value="mistral" {{#if (eq localModel "mistral")}}selected{{/if}}>
-              mistral
-            </option>
-            <option value="neural-chat" {{#if (eq localModel "neural-chat")}}selected{{/if}}>
-              neural-chat
-            </option>
-            <option value="phi-3:mini" {{#if (eq localModel "phi-3:mini")}}selected{{/if}}>
-              phi-3:mini
-            </option>
-          </select>
+          {{#if localAiReachable}}
+            <select id="local-model" name="localModel" data-dtype="String" style="width:100%">
+              {{#each installedLocalModels}}
+                <option value="{{this}}" {{#if (eq ../localModel this)}}selected{{/if}}>{{this}}</option>
+              {{/each}}
+            </select>
+          {{else}}
+            <input type="text" id="local-model" name="localModel" value="{{localModel}}"
+              placeholder="e.g. mistral" data-dtype="String" style="font-family:monospace">
+          {{/if}}
         </div>
-        <p class="notes hint">
-         LocalAI model name
-        </p>
+        <p class="notes hint">Model currently used for inference. Install models below.</p>
+      </div>
+
+      <div class="form-group">
+        <label>Install Model:</label>
+        <div class="form-fields" style="display:flex;gap:.5rem">
+          <input type="text" id="install-model-name" placeholder="e.g. qwen3.5-9b"
+            style="flex:1;font-family:monospace">
+          <button type="button" data-action="installModel" style="white-space:nowrap">
+            <i class="fas fa-download"></i> Install
+          </button>
+        </div>
+        <p class="notes hint">Gallery model ID from <a href="https://localai.io/gallery.html" target="_blank">localai.io/gallery</a>. Download runs in background — click Refresh when done.</p>
+      </div>
+
+      <div class="form-group">
+        <div class="form-fields">
+          <button type="button" data-action="refreshModels" style="width:100%">
+            <i class="fas fa-rotate"></i> Refresh Model List
+          </button>
+        </div>
       </div>
     </div>
 
@@ -107,10 +134,14 @@
     <div class="form-group">
       <label>Adventure Journal Folder:</label>
       <div class="form-fields">
-        <input type="text" id="ai-adventure-folder" name="adventureJournalFolder" value="{{adventureJournalFolder}}"
-          placeholder="(optional)" data-dtype="String">
+        <select id="ai-adventure-folder" name="adventureJournalFolder" data-dtype="String" style="width:100%">
+          <option value="">(none)</option>
+          {{#each journalFolders}}
+            <option value="{{this}}" {{#if (eq ../adventureJournalFolder this)}}selected{{/if}}>{{this}}</option>
+          {{/each}}
+        </select>
       </div>
-      <p class="notes hint">Folder containing adventure/lore journals. Leave blank for emergent campaigns.</p>
+      <p class="notes hint">Top-level journal folder containing your adventure/lore journals.</p>
     </div>
     <div class="form-group">
       <div class="form-fields">
@@ -122,7 +153,7 @@
   </fieldset>
 
   <div style="display:flex;justify-content:flex-end;margin-top:1.25rem">
-    <button type="submit" data-action="save" style="min-width:80px">
+    <button type="button" data-action="save" style="min-width:80px">
       <i class="fas fa-save"></i> Save
     </button>
   </div>

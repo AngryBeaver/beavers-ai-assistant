@@ -5,13 +5,14 @@ import {
   MODULE_FOLDER_NAME,
   LORE_INDEX_JOURNAL_NAME,
 } from '../definitions.js';
-import { AiService, createAiService } from '../services/index.js';
+import { AiService } from '../services/AiService.js';
+import { createAiService } from '../services/index.js';
 import { GameData, FolderData } from './ContextBuilder.js';
 import { JournalApi } from './JournalApi.js';
 
 /**
  * Builds a hierarchical lore index from adventure journal pages.
- * Claude produces a structured index organized by adventure parts → scenes,
+ * The AI service produces a structured index organized by adventure parts → scenes,
  * with a global World section containing all NPCs, locations, and factions.
  */
 export class LoreIndexBuilder {
@@ -25,7 +26,7 @@ export class LoreIndexBuilder {
 
   /**
    * Build or rebuild the lore index.
-   * Reads all pages from adventureJournalFolder, sends to Claude,
+   * Reads all pages from adventureJournalFolder, sends to the AI service,
    * and writes result as a page in adventureIndexJournalName.
    * @throws Error if adventure folder is not configured, not found, or has no pages
    */
@@ -53,12 +54,12 @@ export class LoreIndexBuilder {
       throw new Error(`No journal pages found in adventure folder: "${adventureFolder}"`);
     }
 
-    console.log(`[Lore Index] Found ${pages.length} pages. Sending to Claude...`);
+    console.log(`[Lore Index] Found ${pages.length} pages. Sending to AI service...`);
 
-    // Build the content to send to Claude
-    const contentToIndex = this._formatPagesForClaude(pages);
+    // Build the content to send to the AI service
+    const contentToIndex = this._formatPagesForContext(pages);
 
-    // Call Claude to generate the hierarchical index
+    // Call the AI service to generate the hierarchical index
     const index = await this._generateIndex(contentToIndex);
 
     // Write the index to a journal page
@@ -76,9 +77,8 @@ export class LoreIndexBuilder {
   ): Array<{ journalName: string; pageName: string; content: string }> {
     const pages: Array<{ journalName: string; pageName: string; content: string }> = [];
 
-    // Find all journals directly in this folder
+    // Collect all journals directly in this folder
     const journals = this.#game.journal?.filter((j) => j.folder?.id === folderId) ?? [];
-
     for (const journal of journals) {
       for (const page of journal.pages.contents) {
         const content = stripHtml(page.text?.content ?? '').trim();
@@ -92,13 +92,21 @@ export class LoreIndexBuilder {
       }
     }
 
+    // Recurse into subfolders
+    const subfolders =
+      this.#game.folders?.filter((f) => f.folder?.id === folderId && f.type === 'JournalEntry') ??
+      [];
+    for (const subfolder of subfolders) {
+      pages.push(...this._collectPages(subfolder.id));
+    }
+
     return pages;
   }
 
   /**
-   * Format collected pages into a structure Claude can process.
+   * Format collected pages into a structure the AI service can process.
    */
-  private _formatPagesForClaude(
+  private _formatPagesForContext(
     pages: Array<{ journalName: string; pageName: string; content: string }>,
   ): string {
     const lines: string[] = [];
@@ -113,7 +121,7 @@ export class LoreIndexBuilder {
   }
 
   /**
-   * Call Claude to generate a hierarchical lore index.
+   * Call the AI service to generate a hierarchical lore index.
    */
   private async _generateIndex(contentToIndex: string): Promise<string> {
     const systemPrompt = `You are a lore index builder for a tabletop RPG campaign.
@@ -123,7 +131,7 @@ The index should be organized as:
 - Adventure parts (e.g., "## Part 1: The Arrival")
   - Scene summaries under each part (e.g., "### Scene 1: The Road to Millhaven")
     - Summary (what happens in this scene)
-    - Parts (Some Scenes are big and half multiple parts e.g. sublocations/rooms short summary of each of those if any)
+    - Parts (Some Scenes are big and have multiple parts e.g. sublocations/rooms short summary of each of those if any)
     - NPCs Present (list with brief descriptions)
     - Locations (list with brief descriptions)
     - Factions (list with brief descriptions)
@@ -144,7 +152,7 @@ Produce the index as markdown. Start directly with ## Part 1 or ## World if ther
 
     try {
       const index = await this.#aiService.call(systemPrompt, userPrompt, {
-        max_tokens: 4096,
+        max_tokens: 32768,
       });
 
       return index;
@@ -215,8 +223,14 @@ Produce the index as markdown. Start directly with ## Part 1 or ## World if ther
 
 function stripHtml(html: string): string {
   return html
+    .replace(/<h1[^>]*>(.*?)<\/h1>/gi, '\n### $1\n')
+    .replace(/<h2[^>]*>(.*?)<\/h2>/gi, '\n#### $1\n')
+    .replace(/<h3[^>]*>(.*?)<\/h3>/gi, '\n##### $1\n')
+    .replace(/<h4[^>]*>(.*?)<\/h4>/gi, '\n###### $1\n')
+    .replace(/<h5[^>]*>(.*?)<\/h5>/gi, '\n####### $1\n')
     .replace(/<[^>]*>/g, ' ')
-    .replace(/\s+/g, ' ')
+    .replace(/[^\S\n]+/g, ' ')
+    .replace(/\n{3,}/g, '\n\n')
     .trim();
 }
 

@@ -5,28 +5,14 @@
 # LocalAI service for the Beavers AI Assistant Foundry module — CPU-only version.
 # Runs on the SAME COMPUTER as the GM's Foundry VTT instance.
 # Provides local LLM inference via OpenAI-compatible API.
-#
-# Requires:
-#   - At least 16GB RAM (8GB for model, 8GB for inference)
-#   - Models will be auto-downloaded on first run
-#
-# WARNING: CPU inference is SLOW (~2-5 min per LLM call). Consider GPU if possible.
-#
-# Supported models (adjust MODEL_NAME below):
-#   - phi-3:mini (3B, ~2GB RAM) — smallest, fastest (2-3 min per call)
-#   - mistral:latest (7B, ~6GB RAM) — medium quality (5-15 min per call)
-#   - neural-chat (7B) — slower than Mistral on CPU
-#
-# Not recommended:
-#   - Large models (13B+) on CPU are extremely slow (30+ min per call)
 
 version: '3.8'
 
 services:
   local-ai:
-    image: ghcr.io/go-skynet/local-ai:latest
+    image: localai/localai:latest
     ports:
-      - "8000:8000"
+      - "8080:8080"
     environment:
       # Model to load on startup (auto-downloads on first run)
       # Use phi-3:mini for CPU — fastest

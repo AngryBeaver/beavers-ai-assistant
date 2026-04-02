@@ -6,27 +6,17 @@
 # Runs on the SAME COMPUTER as the GM's Foundry VTT instance.
 # Provides local LLM inference via OpenAI-compatible API.
 #
-# Requires:
-#   - Nvidia GPU + drivers (8GB+ VRAM recommended for Mistral 7B)
-#   - NVIDIA Container Toolkit (https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html)
-#   - Models will be auto-downloaded on first run
-#
-# Supported models (adjust MODEL_NAME below):
-#   - mistral:latest (7B, ~6GB VRAM) — good balance of speed & quality
-#   - neural-chat (7B, ~6GB VRAM) — optimized for conversation
-#   - phi-3:mini (3B, ~2GB VRAM) — smallest, fastest (lower quality)
-#   - openhermes2.5-mistral (7B) — good reasoning
 
 version: '3.8'
 
 services:
   local-ai:
-    image: ghcr.io/go-skynet/local-ai:latest
+    image: localai/localai:latest-gpu-nvidia-cuda-12
     ports:
-      - "8000:8000"
+      - "8080:8080"
     environment:
       # Model to load on startup (auto-downloads on first run)
-      - MODEL_NAME=${LOCAL_AI_MODEL:-mistral}
+      - MODEL_NAME=${LOCAL_AI_MODEL:-qwen3.5-9b}
       # Enable GPU
       - ENABLE_CUDA=true
       - GPU_LAYERS=999  # Use as many layers on GPU as possible

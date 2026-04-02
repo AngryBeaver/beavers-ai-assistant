@@ -50,7 +50,10 @@ export interface GameData {
   };
   scenes?: { active?: SceneData | null };
   actors?: { contents: ActorData[] };
-  folders?: { find(fn: (f: FolderData) => boolean): FolderData | undefined };
+  folders?: {
+    find(fn: (f: FolderData) => boolean): FolderData | undefined;
+    filter(fn: (f: FolderData) => boolean): FolderData[];
+  };
   journal?: {
     find(fn: (j: JournalData) => boolean): JournalData | undefined;
     filter(fn: (j: JournalData) => boolean): JournalData[];
@@ -294,7 +297,13 @@ export class ContextBuilder {
 
 function stripHtml(html: string): string {
   return html
+    .replace(/<h1[^>]*>(.*?)<\/h1>/gi, '\n### $1\n')
+    .replace(/<h2[^>]*>(.*?)<\/h2>/gi, '\n#### $1\n')
+    .replace(/<h3[^>]*>(.*?)<\/h3>/gi, '\n##### $1\n')
+    .replace(/<h4[^>]*>(.*?)<\/h4>/gi, '\n###### $1\n')
+    .replace(/<h5[^>]*>(.*?)<\/h5>/gi, '\n####### $1\n')
     .replace(/<[^>]*>/g, ' ')
-    .replace(/\s+/g, ' ')
+    .replace(/[^\S\n]+/g, ' ')
+    .replace(/\n{3,}/g, '\n\n')
     .trim();
 }
