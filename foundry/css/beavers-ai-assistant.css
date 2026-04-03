@@ -2,11 +2,180 @@
    Beavers AI Assistant — AI GM Window
    ============================================================ */
 
-/* Lore Index Wizard — constrain height and scroll when content overflows */
+/* ============================================================
+   Lore Index Wizard  (.beavers-ai-assistant.lore-wizard)
+   ============================================================ */
+
+/* Window scroll constraint */
 #beavers-lore-index-wizard .window-content {
   max-height: calc(100vh - 120px);
   overflow-y: auto;
 }
+
+/* Outer wrapper */
+.beavers-ai-assistant.lore-wizard { padding: 1rem; }
+
+/* Intro / breadcrumb line */
+.beavers-ai-assistant.lore-wizard .lw-intro {
+  margin-top: 0;
+  font-size: .875em;
+  color: var(--color-text-dark-secondary);
+}
+
+/* Fieldset (estimate, etc.) */
+.beavers-ai-assistant.lore-wizard fieldset {
+  margin: 0 0 1.25rem;
+  padding: .5rem .75rem;
+}
+
+/* Estimate table */
+.beavers-ai-assistant.lore-wizard .lw-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: .875em;
+}
+.beavers-ai-assistant.lore-wizard .lw-table .lw-label {
+  padding: .2rem .5rem .2rem 0;
+  color: var(--color-text-dark-secondary);
+}
+.beavers-ai-assistant.lore-wizard .lw-table .lw-value {
+  padding: .2rem 0;
+  font-family: monospace;
+}
+
+/* Alert banners */
+.beavers-ai-assistant.lore-wizard .lw-alert {
+  padding: .6rem .75rem;
+  border-radius: 4px;
+  font-size: .875em;
+  margin-bottom: .75rem;
+}
+.beavers-ai-assistant.lore-wizard .lw-alert--info {
+  background: var(--color-level-info-bg, #e8f4fd);
+  border: 1px solid var(--color-level-info, #4a90d9);
+}
+.beavers-ai-assistant.lore-wizard .lw-alert--success {
+  background: rgba(40, 167, 69, 0.1);
+  border: 1px solid var(--color-level-success, #28a745);
+}
+.beavers-ai-assistant.lore-wizard .lw-alert--warning {
+  background: var(--color-level-warning-bg, #fff8e1);
+  border: 1px solid var(--color-level-warning, #ffc107);
+}
+.beavers-ai-assistant.lore-wizard .lw-alert--error {
+  background: var(--color-level-error-bg, #fde8e8);
+  border: 1px solid var(--color-level-error, #dc3545);
+}
+.beavers-ai-assistant.lore-wizard .lw-alert .lw-hint {
+  margin-top: .4rem;
+  opacity: .8;
+}
+
+/* Navigation row */
+.beavers-ai-assistant.lore-wizard .lw-nav {
+  display: flex;
+  margin-top: 1.25rem;
+}
+.beavers-ai-assistant.lore-wizard .lw-nav--between { justify-content: space-between; }
+.beavers-ai-assistant.lore-wizard .lw-nav--end     { justify-content: flex-end; }
+.beavers-ai-assistant.lore-wizard .lw-nav--start   { justify-content: flex-start; }
+
+/* Chapter list */
+.beavers-ai-assistant.lore-wizard .lw-chapter-list {
+  display: flex;
+  flex-direction: column;
+  gap: .4rem;
+  margin-bottom: 1.25rem;
+}
+
+/* Chapter row */
+.beavers-ai-assistant.lore-wizard .lw-chapter-row {
+  display: flex;
+  align-items: flex-start;
+  gap: .75rem;
+  padding: .4rem .5rem;
+  border: 1px solid var(--color-border-light-2, #ddd);
+  border-radius: 4px;
+  cursor: grab;
+}
+.beavers-ai-assistant.lore-wizard .lw-chapter-grip {
+  opacity: .35;
+  padding-top: .2rem;
+  font-size: .8em;
+  flex-shrink: 0;
+}
+.beavers-ai-assistant.lore-wizard .lw-chapter-name {
+  flex: 1;
+  font-size: .875em;
+  padding-top: .15rem;
+}
+.beavers-ai-assistant.lore-wizard .lw-tokens {
+  font-size: .8em;
+  opacity: .6;
+  font-family: monospace;
+  margin-left: .4rem;
+}
+.beavers-ai-assistant.lore-wizard .lw-role-group {
+  display: flex;
+  gap: .1rem;
+  flex-shrink: 0;
+}
+.beavers-ai-assistant.lore-wizard .lw-role-label {
+  display: flex;
+  align-items: center;
+  gap: .25rem;
+  font-size: .8em;
+  cursor: pointer;
+  padding: .2rem .4rem;
+  border-radius: 3px;
+}
+
+/* Mixed two-column layout */
+.beavers-ai-assistant.lore-wizard .lw-two-col {
+  display: flex;
+  gap: 1.5rem;
+  margin-bottom: 1rem;
+}
+.beavers-ai-assistant.lore-wizard .lw-col { flex: 1; }
+.beavers-ai-assistant.lore-wizard .lw-col-heading {
+  margin: 0 0 .4rem;
+  font-weight: bold;
+  font-size: .875em;
+}
+.beavers-ai-assistant.lore-wizard .lw-col-list {
+  margin: 0;
+  padding-left: 1.2rem;
+  font-size: .875em;
+}
+
+/* Stacked full-width button group */
+.beavers-ai-assistant.lore-wizard .lw-button-stack {
+  display: flex;
+  flex-direction: column;
+  gap: .5rem;
+  margin-bottom: 1.25rem;
+}
+.beavers-ai-assistant.lore-wizard .lw-button-stack button { width: 100%; }
+
+/* Provider radio options */
+.beavers-ai-assistant.lore-wizard .lw-provider-option {
+  display: flex;
+  align-items: center;
+  gap: .4rem;
+  cursor: pointer;
+}
+
+/* Model select + refresh row */
+.beavers-ai-assistant.lore-wizard .lw-model-row {
+  display: flex;
+  gap: .5rem;
+  align-items: center;
+}
+.beavers-ai-assistant.lore-wizard .lw-model-row select { flex: 1; }
+.beavers-ai-assistant.lore-wizard .lw-model-row button { flex-shrink: 0; }
+
+/* Muted icon */
+.beavers-ai-assistant.lore-wizard .lw-icon-muted { opacity: .6; }
 
 /* Custom module icon */
 .bai-icon::before {

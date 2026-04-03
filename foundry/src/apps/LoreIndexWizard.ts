@@ -1,4 +1,11 @@
-import { LORE_INDEX_JOURNAL_NAME, MODULE_FOLDER_NAME, NAMESPACE } from '../definitions.js';
+import {
+  LORE_INDEX_JOURNAL_NAME,
+  MODULE_FOLDER_NAME,
+  NAMESPACE,
+  SETTINGS,
+  DEFAULTS,
+} from '../definitions.js';
+import type { AiProvider } from '../definitions.js';
 import {
   ChapterCandidate,
   ChapterDetector,
@@ -26,8 +33,9 @@ interface ChapterCandidateView extends ChapterCandidate {
   showOverviewOption: boolean;
 }
 
-type WizardStep = 'location' | 'status' | 'mixed' | 'chapters';
+type WizardStep = 'location' | 'mixed' | 'chapters' | 'model';
 type IndexStatus = 'none' | 'exists';
+type ModelContext = 'indexing' | 'vision';
 
 interface WizardContext {
   // common
@@ -35,15 +43,22 @@ interface WizardContext {
   locationType: 'folder' | 'journal';
   // location step
   locations: LocationItem[];
-  // status step
-  indexStatus: IndexStatus;
-  inputTokensFormatted: string;
-  claudeCostEstimate: string;
   // mixed step
   mixedFolders: ChapterCandidate[];
   mixedJournals: ChapterCandidate[];
   // chapters step
   chapters: ChapterCandidateView[];
+  // model step
+  modelContext: ModelContext;
+  selectedProvider: AiProvider;
+  selectedModel: string;
+  availableModels: string[];
+  modelFetchError: boolean;
+  estimatedInputTokensFormatted: string;
+  estimatedOutputTokensFormatted: string;
+  claudeCostEstimate: string;
+  hasClaudeApiKey: boolean;
+  localAiUrl: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -78,9 +93,11 @@ function makeFoundryGameAccessor(): GameAccessor {
 
 /**
  * Guided wizard for building and maintaining the lore index.
+ *
+ * Step order: location → (mixed) → chapters → model → indexing pass
+ *
  * Each step has its own Handlebars template declared in PARTS.
  * Only the active step's part is rendered on each transition.
- * Chapter detection is delegated to {@link ChapterDetector}.
  */
 export class LoreIndexWizard extends foundry.applications.api.HandlebarsApplicationMixin(
   foundry.applications.api.ApplicationV2,
@@ -92,22 +109,21 @@ export class LoreIndexWizard extends foundry.applications.api.HandlebarsApplicat
     actions: {
       continueFromLocation: LoreIndexWizard._onContinueFromLocation,
       backToLocation: LoreIndexWizard._onBackToLocation,
-      startBuild: LoreIndexWizard._onStartBuild,
-      startRebuild: LoreIndexWizard._onStartRebuild,
-      startEnrichment: LoreIndexWizard._onStartEnrichment,
       useMixedFolders: LoreIndexWizard._onUseMixedFolders,
       useMixedJournals: LoreIndexWizard._onUseMixedJournals,
       useMixedBoth: LoreIndexWizard._onUseMixedBoth,
-      backToStatus: LoreIndexWizard._onBackToStatus,
       confirmChapters: LoreIndexWizard._onConfirmChapters,
+      backToChapters: LoreIndexWizard._onBackToChapters,
+      refreshModels: LoreIndexWizard._onRefreshModels,
+      startIndexing: LoreIndexWizard._onStartIndexing,
     },
   };
 
   static PARTS = {
     location: { template: `modules/${NAMESPACE}/templates/wizard/location.hbs` },
-    status: { template: `modules/${NAMESPACE}/templates/wizard/status.hbs` },
     mixed: { template: `modules/${NAMESPACE}/templates/wizard/mixed.hbs` },
     chapters: { template: `modules/${NAMESPACE}/templates/wizard/chapters.hbs` },
+    model: { template: `modules/${NAMESPACE}/templates/wizard/model.hbs` },
   };
 
   private static _instance: LoreIndexWizard | null = null;
@@ -116,10 +132,16 @@ export class LoreIndexWizard extends foundry.applications.api.HandlebarsApplicat
   private _step: WizardStep = 'location';
   private _selectedLocation: LocationItem | null = null;
   private _indexStatus: IndexStatus = 'none';
-  private _inputTokens: number = 0;
   private _chapters: ChapterCandidate[] = [];
   private _mixedFolders: ChapterCandidate[] = [];
   private _mixedJournals: ChapterCandidate[] = [];
+
+  // Model step state
+  private _modelContext: ModelContext = 'indexing';
+  private _selectedProvider: AiProvider = DEFAULTS.AI_PROVIDER;
+  private _selectedModel: string = '';
+  private _availableModels: string[] = [];
+  private _modelFetchError: boolean = false;
 
   private readonly _detector = new ChapterDetector(makeFoundryGameAccessor());
 
@@ -148,10 +170,48 @@ export class LoreIndexWizard extends foundry.applications.api.HandlebarsApplicat
       if (el) el.style.display = partId === this._step ? '' : 'none';
     }
 
-    if (this._step === 'chapters') {
-      this._setupChapterDragDrop();
-    }
+    if (this._step === 'location') this._setupLocationBadge();
+    if (this._step === 'chapters') this._setupChapterDragDrop();
+    if (this._step === 'model') this._setupModelListeners();
   }
+
+  // ---------------------------------------------------------------------------
+  // Location step — live index-status badge
+  // ---------------------------------------------------------------------------
+
+  private _setupLocationBadge(): void {
+    const select = this.element.querySelector<HTMLSelectElement>('#wizard-location');
+    const badge = this.element.querySelector<HTMLElement>('#wizard-index-status');
+    if (!select || !badge) return;
+
+    const update = (): void => {
+      const opt = select.options[select.selectedIndex];
+      if (!opt?.value) {
+        badge.innerHTML = '';
+        return;
+      }
+      const type = (opt.dataset.type ?? 'folder') as 'folder' | 'journal';
+      const status = this._detectIndexStatusFor(opt.value, type);
+      if (status === 'exists') {
+        badge.innerHTML =
+          `<div style="padding:.6rem .75rem;background:var(--color-level-success-bg,#d4edda);` +
+          `border:1px solid var(--color-level-success,#28a745);border-radius:4px;font-size:.875em;margin-top:.75rem">` +
+          `<i class="fas fa-circle-check"></i> A lore index exists for this adventure.</div>`;
+      } else {
+        badge.innerHTML =
+          `<div style="padding:.6rem .75rem;background:var(--color-level-info-bg,#e8f4fd);` +
+          `border:1px solid var(--color-level-info,#4a90d9);border-radius:4px;font-size:.875em;margin-top:.75rem">` +
+          `<i class="fas fa-circle-info"></i> No lore index found. Continuing will build one.</div>`;
+      }
+    };
+
+    select.addEventListener('change', update);
+    if (select.value) update();
+  }
+
+  // ---------------------------------------------------------------------------
+  // Chapters step — drag-and-drop reordering
+  // ---------------------------------------------------------------------------
 
   private _setupChapterDragDrop(): void {
     const rows = Array.from(this.element.querySelectorAll<HTMLElement>('[data-chapter-id]'));
@@ -206,14 +266,47 @@ export class LoreIndexWizard extends foundry.applications.api.HandlebarsApplicat
     }
   }
 
+  // ---------------------------------------------------------------------------
+  // Model step — provider radio + model dropdown listeners
+  // ---------------------------------------------------------------------------
+
+  private _setupModelListeners(): void {
+    const radios = Array.from(
+      this.element.querySelectorAll<HTMLInputElement>('input[name="wizard-provider"]'),
+    );
+    for (const radio of radios) {
+      radio.addEventListener('change', async () => {
+        this._selectedProvider = radio.value as AiProvider;
+        if (
+          this._selectedProvider === 'local-ai' &&
+          this._availableModels.length === 0 &&
+          !this._modelFetchError
+        ) {
+          await this._fetchModels();
+        }
+        this.render({ force: true });
+      });
+    }
+
+    const modelSelect = this.element.querySelector<HTMLSelectElement>('#wizard-model');
+    if (modelSelect) {
+      modelSelect.addEventListener('change', () => {
+        this._selectedModel = modelSelect.value;
+      });
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Context
+  // ---------------------------------------------------------------------------
+
   async _prepareContext(_options: object): Promise<WizardContext> {
+    const inputTokens = this._estimateInputTokens();
+    const outputTokens = this._estimateOutputTokens();
     return {
       locationName: this._selectedLocation?.name ?? '',
       locationType: this._selectedLocation?.type ?? 'folder',
       locations: this._collectLocations(),
-      indexStatus: this._indexStatus,
-      inputTokensFormatted: this._inputTokens.toLocaleString(),
-      claudeCostEstimate: this._claudeCostEstimate(),
       mixedFolders: this._mixedFolders,
       mixedJournals: this._mixedJournals,
       chapters: this._chapters.map((c) => ({
@@ -223,6 +316,16 @@ export class LoreIndexWizard extends foundry.applications.api.HandlebarsApplicat
         roleIsSkip: c.role === 'skip',
         showOverviewOption: true,
       })),
+      modelContext: this._modelContext,
+      selectedProvider: this._selectedProvider,
+      selectedModel: this._selectedModel,
+      availableModels: this._availableModels,
+      modelFetchError: this._modelFetchError,
+      estimatedInputTokensFormatted: inputTokens.toLocaleString(),
+      estimatedOutputTokensFormatted: outputTokens.toLocaleString(),
+      claudeCostEstimate: this._claudeCostFromTokens(inputTokens, outputTokens),
+      hasClaudeApiKey: this._hasClaudeApiKey(),
+      localAiUrl: this._localAiUrl(),
     };
   }
 
@@ -251,7 +354,7 @@ export class LoreIndexWizard extends foundry.applications.api.HandlebarsApplicat
     return [...folders, ...journals];
   }
 
-  private _detectIndexStatus(): IndexStatus {
+  private _detectIndexStatusFor(id: string, type: 'folder' | 'journal'): IndexStatus {
     const modFolder = (game.folders as any)?.find(
       (f: any) => f.name === MODULE_FOLDER_NAME && f.type === 'JournalEntry',
     );
@@ -259,7 +362,17 @@ export class LoreIndexWizard extends foundry.applications.api.HandlebarsApplicat
     const indexJournal = (game.journal as any)?.find(
       (j: any) => j.folder?.id === modFolder.id && j.name === LORE_INDEX_JOURNAL_NAME,
     );
-    return indexJournal?.pages.size > 0 ? 'exists' : 'none';
+    if (!indexJournal?.pages.size) return 'none';
+    // Check if any page is associated with this location
+    const prefix =
+      type === 'folder'
+        ? (game.folders as any)?.get(id)?.name
+        : (game.journal as any)?.get(id)?.name;
+    if (!prefix) return 'none';
+    const hasPage = [...indexJournal.pages.values()].some(
+      (p: any) => p.name?.startsWith('Chapter:') || p.name === 'Overview',
+    );
+    return hasPage ? 'exists' : 'none';
   }
 
   private _resolveLocationName(id: string, type: 'folder' | 'journal'): string {
@@ -268,13 +381,39 @@ export class LoreIndexWizard extends foundry.applications.api.HandlebarsApplicat
   }
 
   // ---------------------------------------------------------------------------
-  // Cost estimation
+  // Estimate helpers
   // ---------------------------------------------------------------------------
 
-  private _claudeCostEstimate(): string {
-    if (this._inputTokens === 0) return '—';
-    const cost = (this._inputTokens / 1_000_000) * 3;
+  private _estimateInputTokens(): number {
+    return this._chapters.filter((c) => c.role !== 'skip').reduce((sum, c) => sum + c.tokens, 0);
+  }
+
+  private _estimateOutputTokens(): number {
+    return this._chapters.filter((c) => c.role !== 'skip').length * 4096;
+  }
+
+  private _claudeCostFromTokens(inputTokens: number, outputTokens: number): string {
+    if (inputTokens === 0) return '—';
+    const cost = (inputTokens / 1_000_000) * 3 + (outputTokens / 1_000_000) * 15;
     return cost < 0.01 ? '< $0.01' : `~$${cost.toFixed(2)}`;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Settings helpers
+  // ---------------------------------------------------------------------------
+
+  private _hasClaudeApiKey(): boolean {
+    const key = (game.settings as any)?.get(NAMESPACE, SETTINGS.CLAUDE_API_KEY) as
+      | string
+      | undefined;
+    return !!key?.trim();
+  }
+
+  private _localAiUrl(): string {
+    return (
+      ((game.settings as any)?.get(NAMESPACE, SETTINGS.LOCAL_AI_URL) as string) ||
+      DEFAULTS.LOCAL_AI_URL
+    );
   }
 
   // ---------------------------------------------------------------------------
@@ -304,6 +443,29 @@ export class LoreIndexWizard extends foundry.applications.api.HandlebarsApplicat
   }
 
   // ---------------------------------------------------------------------------
+  // Model fetch
+  // ---------------------------------------------------------------------------
+
+  private async _fetchModels(): Promise<void> {
+    this._modelFetchError = false;
+    try {
+      const res = await fetch(`${this._localAiUrl()}/v1/models`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = (await res.json()) as { data: { id: string }[] };
+      this._availableModels = data.data.map((m) => m.id).sort();
+      if (this._selectedModel && !this._availableModels.includes(this._selectedModel)) {
+        this._selectedModel = '';
+      }
+      if (!this._selectedModel && this._availableModels.length > 0) {
+        this._selectedModel = this._availableModels[0];
+      }
+    } catch {
+      this._modelFetchError = true;
+      this._availableModels = [];
+    }
+  }
+
+  // ---------------------------------------------------------------------------
   // Actions
   // ---------------------------------------------------------------------------
 
@@ -321,30 +483,12 @@ export class LoreIndexWizard extends foundry.applications.api.HandlebarsApplicat
       type,
       name: this._resolveLocationName(opt.value, type),
     };
-    this._indexStatus = this._detectIndexStatus();
-    this._inputTokens = this._detector.estimateTokens(opt.value, type);
-    this._goToStep('status');
+    this._indexStatus = this._detectIndexStatusFor(opt.value, type);
+    this._runChapterDetection();
   }
 
   static async _onBackToLocation(this: LoreIndexWizard): Promise<void> {
     this._goToStep('location');
-  }
-
-  static async _onBackToStatus(this: LoreIndexWizard): Promise<void> {
-    this._goToStep('status');
-  }
-
-  static async _onStartBuild(this: LoreIndexWizard): Promise<void> {
-    this._runChapterDetection();
-  }
-
-  static async _onStartRebuild(this: LoreIndexWizard): Promise<void> {
-    this._runChapterDetection();
-  }
-
-  static async _onStartEnrichment(this: LoreIndexWizard): Promise<void> {
-    // Task 0.6 — map enrichment pass
-    ui.notifications.info('Map enrichment — coming in Task 0.6.');
   }
 
   static async _onUseMixedFolders(this: LoreIndexWizard): Promise<void> {
@@ -368,7 +512,32 @@ export class LoreIndexWizard extends foundry.applications.api.HandlebarsApplicat
       return;
     }
 
-    // Task 0.4 — model selection
-    ui.notifications.info('Model selection — coming in Task 0.4.');
+    this._selectedProvider =
+      ((game.settings as any)?.get(NAMESPACE, SETTINGS.AI_PROVIDER) as AiProvider) ||
+      DEFAULTS.AI_PROVIDER;
+
+    if (
+      this._selectedProvider === 'local-ai' &&
+      this._availableModels.length === 0 &&
+      !this._modelFetchError
+    ) {
+      await this._fetchModels();
+    }
+
+    this._goToStep('model');
+  }
+
+  static async _onBackToChapters(this: LoreIndexWizard): Promise<void> {
+    this._goToStep('chapters');
+  }
+
+  static async _onRefreshModels(this: LoreIndexWizard): Promise<void> {
+    await this._fetchModels();
+    this.render({ force: true });
+  }
+
+  static async _onStartIndexing(this: LoreIndexWizard): Promise<void> {
+    // Task 0.5 — chapter-by-chapter indexing pass
+    ui.notifications.info('Indexing pass — coming in Task 0.5.');
   }
 }

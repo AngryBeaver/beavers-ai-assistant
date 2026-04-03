@@ -1,0 +1,127 @@
+<div class="beavers-ai-assistant lore-wizard standard-form">
+
+  <p class="lw-intro">
+    <i class="fas {{#if (eq locationType "folder")}}fa-folder{{else}}fa-book{{/if}}"></i>
+    {{locationName}}
+  </p>
+
+  {{!-- Token / cost estimate --}}
+  <fieldset>
+    <legend>Estimate (selected chapters)</legend>
+    <table class="lw-table">
+      <tr>
+        <td class="lw-label">Input tokens (approx.)</td>
+        <td class="lw-value">{{estimatedInputTokensFormatted}}</td>
+      </tr>
+      <tr>
+        <td class="lw-label">Output tokens (approx.)</td>
+        <td class="lw-value">{{estimatedOutputTokensFormatted}}</td>
+      </tr>
+      <tr>
+        <td class="lw-label">Claude Sonnet</td>
+        <td class="lw-value">
+          {{claudeCostEstimate}}
+          <span style="font-size:.8em;opacity:.7">(input $3 + output $15 per 1M tokens)</span>
+        </td>
+      </tr>
+      <tr>
+        <td class="lw-label">LocalAI</td>
+        <td style="padding:.2rem 0">Free</td>
+      </tr>
+    </table>
+  </fieldset>
+
+  {{!-- Provider selector --}}
+  <div class="form-group" style="margin-bottom:1rem">
+    <label>AI Provider:</label>
+    <div class="form-fields" style="gap:1.5rem">
+      <label class="lw-provider-option">
+        <input type="radio" name="wizard-provider" value="claude"
+               {{#if (eq selectedProvider "claude")}}checked{{/if}}>
+        Claude
+      </label>
+      <label class="lw-provider-option">
+        <input type="radio" name="wizard-provider" value="local-ai"
+               {{#if (eq selectedProvider "local-ai")}}checked{{/if}}>
+        LocalAI
+      </label>
+    </div>
+  </div>
+
+  {{!-- Claude branch --}}
+  {{#if (eq selectedProvider "claude")}}
+    {{#if hasClaudeApiKey}}
+    <div class="lw-alert lw-alert--success">
+      <i class="fas fa-circle-check" style="color:var(--color-level-success,#28a745)"></i>
+      API key configured.
+      <div class="lw-hint">Reliable for large structured output. Costs apply — estimate shown above.</div>
+    </div>
+    {{else}}
+    <div class="lw-alert lw-alert--warning">
+      <i class="fas fa-triangle-exclamation"></i>
+      No API key configured — set it in AI Assistant settings before indexing.
+      <div class="lw-hint">Reliable for large structured output. Costs apply — estimate shown above.</div>
+    </div>
+    {{/if}}
+  {{/if}}
+
+  {{!-- LocalAI branch --}}
+  {{#if (eq selectedProvider "local-ai")}}
+  <div style="margin-bottom:1rem">
+
+    {{#if modelFetchError}}
+    <div class="lw-alert lw-alert--error">
+      <i class="fas fa-circle-xmark"></i>
+      Could not reach LocalAI at <code>{{localAiUrl}}</code>.
+      Load models via the
+      <a href="{{localAiUrl}}/browse" target="_blank">LocalAI model browser</a>
+      then refresh.
+    </div>
+    {{else if availableModels}}
+    <p style="margin:0 0 .4rem;font-size:.8em;opacity:.7">
+      {{#if (eq modelContext "indexing")}}
+        Qwen3.5-9B recommended — 262k context, handles full adventure modules.
+      {{else}}
+        Use a vision-capable model. Qwen3-VL-8B-Instruct recommended.
+      {{/if}}
+    </p>
+    {{else}}
+    <div class="lw-alert lw-alert--warning">
+      <i class="fas fa-triangle-exclamation"></i>
+      No models available. Load models via the
+      <a href="{{localAiUrl}}/browse" target="_blank">LocalAI model browser</a>
+      then refresh.
+    </div>
+    {{/if}}
+
+    <div class="lw-model-row">
+      <select id="wizard-model" {{#unless availableModels}}disabled{{/unless}}>
+        {{#unless availableModels}}
+          <option value="">— no models —</option>
+        {{/unless}}
+        {{#each availableModels}}
+          <option value="{{this}}" {{#if (eq this ../selectedModel)}}selected{{/if}}>{{this}}</option>
+        {{/each}}
+      </select>
+      <button type="button" data-action="refreshModels" title="Refresh model list">
+        <i class="fas fa-rotate"></i> Refresh
+      </button>
+    </div>
+
+  </div>
+  {{/if}}
+
+  {{!-- Navigation --}}
+  <div class="lw-nav lw-nav--between">
+    <button type="button" data-action="backToChapters">
+      <i class="fas fa-arrow-left"></i> Back
+    </button>
+    <button type="button" data-action="startIndexing"
+            {{#if (eq selectedProvider "local-ai")}}
+              {{#unless selectedModel}}disabled{{/unless}}
+            {{/if}}>
+      <i class="fas fa-wand-magic-sparkles"></i> Start Indexing
+    </button>
+  </div>
+
+</div>

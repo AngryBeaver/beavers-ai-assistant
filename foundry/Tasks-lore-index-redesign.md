@@ -94,7 +94,7 @@ The button label may reflect state (no index / index exists) but the wizard hand
 
 ## Phase 0 — Lore Index Wizard (new ApplicationV2)
 
-**Files:** `foundry/src/apps/LoreIndexWizard.ts` + `templates/lore-index-wizard.hbs`
+**Files:** `foundry/src/apps/LoreIndexWizard.ts` + `templates/wizard/*.hbs`
 
 The wizard is the single entry point for all lore index operations: building, rebuilding chapters,
 and enriching scenes with map data. It is incremental and resumable — skipping a step always
@@ -102,9 +102,19 @@ preserves existing data.
 
 Indexing and vision model choices are ephemeral (per-run, not stored in settings).
 
+**Wizard step order:**
+
+1. **location** — select adventure folder/journal; index status shown inline
+2. **mixed** — (only if folder contains both subfolders and journals) choose which to treat as chapters
+3. **chapters** — confirm and reorder chapter candidates
+4. **model** — token/cost estimate (from confirmed non-skipped chapters) + AI provider + model selection → Start Indexing
+
+There is no separate status screen. Index status is a badge on the location step.
+Token/cost estimate is on the model step, not the location step, and reflects only the non-skipped chapters.
+
 ---
 
-### Task 0.1 — Wizard shell and state detection
+### Task 0.1 — Wizard shell and state detection ✓ DONE
 
 Create `LoreIndexWizard.ts` as an `ApplicationV2`. Step state is held in instance variables.
 Navigation uses `_goToStep(name)` which re-renders the content area without closing the window.
@@ -112,39 +122,44 @@ Navigation uses `_goToStep(name)` which re-renders the content area without clos
 **Step: Location selection (always first)**
 
 Show a dropdown of all first-level items visible in Foundry — both folders and journals — so the
-GM can point the wizard at their adventure content regardless of how it is organised:
+GM can point the wizard at their adventure content regardless of how it is organised. Display index
+status as an inline badge below the dropdown — detected immediately when a location is chosen
+(or when Continue is clicked):
 
 ```
 Where is your adventure content?
 [ dropdown: all root-level folders and journals ]
+
+ℹ No lore index found for this adventure.      ← shown inline, not a separate screen
+  (or) ✓ A lore index already exists.
+
 [Continue]
 ```
 
-The selected item (folder or journal) is stored in wizard state.
+Index status states:
 
-**Step: State detection (after location selected)**
+| State | Badge shown |
+|---|---|
+| No index | ℹ info badge — "No lore index found. Continuing will build one." |
+| Index exists | ✓ success badge — "A lore index exists. Continuing will let you rebuild or enrich." |
 
-Inspect the lore index journal to determine what already exists for this adventure location:
-
-| State | Detection | Screen shown |
-|---|---|---|
-| No index | Index journal has no pages for this location | "No index found. Let's build one." → chapter detection |
-| Partial index | Some `Chapter:` pages exist but not all detected chapters | "Index incomplete. Continue or rebuild from scratch?" |
-| Full index | All detected chapters present | "Index is up to date." → [Rebuild chapters] [Update map enrichments] |
+The selected item (folder or journal) is stored in wizard state. Clicking Continue always proceeds
+to chapter detection — the status badge is informational only.
 
 ---
 
-### Task 0.2 — Token / cost estimate ✓ DONE
+### Task 0.2 — Token / cost estimate (moved to model step)
 
-After location is selected, collect all pages from the adventure content and display on the
-status screen:
-- Estimated input tokens: `Math.ceil(stripped_chars / 4)`
+Token and cost estimate is displayed on the **model step** (Task 0.4), not on a dedicated status
+screen. It is calculated from the non-skipped chapters confirmed in the chapters step:
+
+- Estimated input tokens: sum of `chapter.tokens` for all chapters where `role !== 'skip'`
 - Claude Sonnet cost: input tokens × $3/1M (approximate, input only — labelled as such)
 - LocalAI: Free
 
-Per-chapter token estimates are shown live during the indexing pass (Task 0.5).
-No global max output tokens setting is needed — indexing is chapter-by-chapter so each call
-output is naturally bounded by one chapter's content.
+The separate `status` wizard step and its template are removed. The `status` PART is removed from
+`LoreIndexWizard.PARTS`. The `_indexStatus` / `indexStatus` state is retained as a field but
+displayed inline on the location step.
 
 ---
 
@@ -204,39 +219,70 @@ the Overview is generated from all chapter summaries as normal.
 
 ---
 
-### Task 0.4 — Model selection and LocalAI load indicator
+### Task 0.4 — Estimate + model selection step
 
-Shown once before the chapter-by-chapter indexing pass begins (and again separately before the
-map enrichment pass, since a different model may be chosen).
+This is the fourth and final wizard step before indexing begins. It combines the token/cost
+estimate with AI provider and model selection on a single screen.
 
-**Provider selector: Claude | LocalAI**
-
-Claude branch:
-- Shows API key status (configured / missing)
-- Hint: "Reliable for large structured output. Costs apply — estimate shown above."
-
-LocalAI branch:
-- Shows installed models fetched from `GET /v1/models`
-- For indexing: recommended label on Qwen3.5-9B — "262k context, handles full adventure modules"
-- For vision: show only vision-capable models; recommended label on Qwen3-VL-8B-Instruct —
-  "Fast and accurate for map layouts. Use Instruct variant, not Thinking."
-- **Load indicator** when a model is selected that is not yet in the `/v1/models` response:
+**Screen layout (top to bottom):**
 
 ```
-⏳ Loading qwen3.5-9b — this may take several minutes on first use.
-   Once loaded it stays resident in Docker until the container restarts.
-   [animated bar]
+── Input estimate ──────────────────────────────
+  Tokens (approx.)   12,400
+  Claude Sonnet      ~$0.04  (approx. input cost — output shown per chapter)
+  LocalAI            Free
+────────────────────────────────────────────────
+
+Provider   [● Claude]  [○ LocalAI]
+
+── Claude branch (shown when Claude selected) ───
+  API key: ✓ configured
+  Hint: Reliable for large structured output. Costs apply — estimate shown above.
+
+── LocalAI branch (shown when LocalAI selected) ─
+  Model   [ dropdown of available models ▾ ]  [⟳ Refresh]
+  Hint text depends on context:
+    Indexing:  "Qwen3.5-9B recommended — 262k context, handles full adventure modules."
+    Vision:    "Use a vision-capable model. Qwen3-VL-8B-Instruct recommended."
+────────────────────────────────────────────────
+
+[← Back]                          [Start Indexing →]
 ```
 
-Poll `GET /v1/models` every 5 seconds. When the model appears, replace with:
-```
-✓ Model ready.
-```
+**Token/cost estimate**
 
-The [Continue] button is disabled until the model is confirmed ready (or Claude is selected).
+Calculated from `sum of chapter.tokens` for all chapters where `role !== 'skip'`.
+Uses the same formula as before: input tokens × $3/1M for Claude Sonnet, Free for LocalAI.
 
-Model load indicator appears identically in both the indexing model step and the vision model
-step — same component, different context.
+**Provider selector**
+
+Radio toggle between Claude and LocalAI. Default to whichever provider is currently configured
+in the Interact settings (`SETTINGS.AI_PROVIDER`).
+
+**Claude branch**
+
+Show API key status: configured (✓) or missing (✗ — warn but do not block).
+Static hint text.
+
+**LocalAI branch**
+
+Fetch `GET /v1/models` once when the LocalAI branch is first shown (or on Refresh).
+Display results in a dropdown. Show a Refresh button (⟳) next to the dropdown to re-fetch.
+No polling. No loading indicator. Model management is done externally via the LocalAI UI at
+`http://localhost:8080/app/models` — the wizard only reflects what is already available.
+
+If the fetch fails or returns an empty list, show: "No models available. Load models via the
+LocalAI UI before continuing." — and disable Start Indexing.
+
+**Start Indexing button**
+
+Disabled when LocalAI is selected and no model is chosen.
+Always enabled when Claude is selected (even if API key is missing — error surfaces at call time).
+
+**Reuse on vision step**
+
+The same step is shown before the map enrichment pass (Task 0.6) with `context = 'vision'`.
+The hint text and recommended model label differ based on context. No other differences.
 
 ---
 
