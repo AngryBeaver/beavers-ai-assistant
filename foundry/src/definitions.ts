@@ -40,7 +40,7 @@ export type AiProvider = 'claude' | 'local-ai';
 export const DEFAULTS = {
   AI_PROVIDER: 'claude' as AiProvider,
   CLAUDE_MODEL: 'claude-sonnet-4-6',
-  LOCAL_MODEL: 'mistral',
-  LOCAL_AI_URL: 'http://localhost:8080',
+  LOCAL_MODEL: 'qwen3.5-9b',
+  LOCAL_AI_URL: 'http://127.0.0.1:8080',
   SESSION_HISTORY_MESSAGES: 30,
 } as const;

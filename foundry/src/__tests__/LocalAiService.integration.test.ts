@@ -1,12 +1,15 @@
 import { describe, it, expect, beforeEach } from 'vitest';
+import * as http from 'node:http';
 import { LocalAiService } from '../services/LocalAiService.js';
 import { NAMESPACE, SETTINGS, DEFAULTS } from '../definitions.js';
 
 /**
  * Integration tests against real LocalAI server.
  * Skipped by default unless LOCAL_AI_URL is set in environment and server is running.
- * Run: LOCAL_AI_URL=http://localhost:8000/v1 npm run test
+ * Run: LOCAL_AI_URL=http://localhost:8080 npm run test
  */
+
+//process.env.LOCAL_AI_URL = 'http://localhost:8080'
 
 const skipIfNoLocalAi = !process.env.LOCAL_AI_URL;
 
@@ -14,13 +17,48 @@ const realGame = {
   settings: {
     get: (ns: string, key: string) => {
       if (key === SETTINGS.LOCAL_AI_URL) return process.env.LOCAL_AI_URL;
-      if (key === SETTINGS.LOCAL_MODEL) return process.env.LOCAL_MODEL || 'mistral';
+      if (key === SETTINGS.LOCAL_MODEL) return process.env.LOCAL_MODEL || 'qwen3-8b';
       return undefined;
     },
   },
 };
 
-describe.skipIf(skipIfNoLocalAi)('LocalAiService (integration)', () => {
+describe.skipIf(skipIfNoLocalAi)('LocalAiService - models endpoint (integration)', { timeout: 15_000 }, () => {
+  it('lists available models and includes qwen3.5-9b', async () => {
+    const response = await fetch(`${process.env.LOCAL_AI_URL}/v1/models`);
+    expect(response.ok).toBe(true);
+    const data = await response.json() as { data: { id: string }[] };
+    const ids = data.data.map((m) => m.id);
+    expect(ids).toContain('qwen3.5-9b');
+  });
+
+  it('http.request POST works (undici bypass)', async () => {
+    const url = new URL(`${process.env.LOCAL_AI_URL}/v1/chat/completions`);
+    const body = JSON.stringify({
+      model: process.env.LOCAL_MODEL || 'qwen3.5-9b',
+      max_tokens: 20,
+      messages: [{ role: 'user', content: 'Say hi.' }],
+    });
+    const text = await new Promise<string>((resolve, reject) => {
+      const req = http.request(
+        { hostname: '127.0.0.1', port: url.port, path: url.pathname, method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) } },
+        (res) => {
+          console.log('response headers received, status:', res.statusCode);
+          let data = '';
+          res.on('data', (chunk) => { console.log('data chunk received, bytes:', chunk.length); data += chunk; });
+          res.on('end', () => { console.log('response ended'); resolve(data); });
+        },
+      );
+      req.on('error', reject);
+      req.write(body);
+      req.end();
+    });
+    expect(text).toBeTruthy();
+  });
+});
+
+describe.skipIf(skipIfNoLocalAi)('LocalAiService (integration)', { timeout: 50_000 }, () => {
   let service: LocalAiService;
 
   beforeEach(() => {

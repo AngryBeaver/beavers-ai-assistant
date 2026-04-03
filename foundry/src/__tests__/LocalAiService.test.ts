@@ -40,7 +40,7 @@ describe('LocalAiService', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockGame.settings.get.mockImplementation((ns, key) => {
-      if (key === SETTINGS.LOCAL_AI_URL) return 'http://localhost:8000/v1';
+      if (key === SETTINGS.LOCAL_AI_URL) return 'http://localhost:8080';
       if (key === SETTINGS.LOCAL_MODEL) return 'mistral';
       return undefined;
     });
@@ -73,7 +73,7 @@ describe('LocalAiService', () => {
       await service.call('my system', 'my user', { max_tokens: 256, temperature: 0.2 });
 
       const [url, init] = fetchMock.mock.calls[0];
-      expect(url).toBe('http://localhost:8000/v1/chat/completions');
+      expect(url).toBe('http://localhost:8080/v1/chat/completions');
 
       const body = JSON.parse(init.body);
       expect(body.messages).toEqual([

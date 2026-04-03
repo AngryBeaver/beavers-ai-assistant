@@ -39,7 +39,7 @@ export class LocalAiService implements AiService {
 
     const data = (await response.json()) as any;
     if (data.choices[0]?.message?.content) {
-      return data.choices[0].message.content;
+      return data.choices[0].message.content.trim();
     }
     throw new Error('Unexpected LocalAI response format');
   }
