@@ -1,5 +1,6 @@
 import { NAMESPACE, SETTINGS, DEFAULTS } from '../definitions.js';
 import { AiService, AiResponse, GameData, CallOptions, ChunkType } from './AiService.js';
+import { fetchImageAsBase64 } from '../modules/loreIndexUtils.js';
 
 export class ClaudeService implements AiService {
   constructor(private game: GameData) {}
@@ -55,6 +56,49 @@ export class ClaudeService implements AiService {
       return { content, ...(reasoning ? { reasoning } : {}) };
     }
     throw new Error('Unexpected Claude response format');
+  }
+
+  async callWithImage(
+    systemPrompt: string,
+    userPrompt: string,
+    imageUrl: string,
+    options?: CallOptions,
+  ): Promise<string> {
+    const { base64, mediaType } = await fetchImageAsBase64(imageUrl);
+    const response = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': this.apiKey,
+        'anthropic-version': '2023-06-01',
+      },
+      body: JSON.stringify({
+        model: this.model(options),
+        max_tokens: options?.max_tokens ?? 2048,
+        system: systemPrompt,
+        messages: [
+          {
+            role: 'user',
+            content: [
+              { type: 'image', source: { type: 'base64', media_type: mediaType, data: base64 } },
+              { type: 'text', text: userPrompt },
+            ],
+          },
+        ],
+      }),
+    });
+
+    if (!response.ok) {
+      const err = (await response.json().catch(() => ({}))) as any;
+      throw new Error(
+        `Claude API error ${response.status}: ${err?.error?.message || response.statusText}`,
+      );
+    }
+
+    const data = (await response.json()) as any;
+    const text = (data.content ?? []).find((b: any) => b.type === 'text')?.text ?? '';
+    if (!text) throw new Error('Unexpected Claude vision response format');
+    return text;
   }
 
   async stream(

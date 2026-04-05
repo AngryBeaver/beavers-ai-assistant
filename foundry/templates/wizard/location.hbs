@@ -1,8 +1,13 @@
 <div class="beavers-ai-assistant lore-wizard standard-form">
 
+  {{#if hasAnyLoreIndex}}
+  <div class="lw-alert lw-alert--success" style="margin-bottom:.75rem">
+    <i class="fas fa-circle-check"></i> A lore index exists.
+  </div>
+  {{/if}}
+
   <p style="margin-top:0">
     Select the folder or journal that contains your adventure content.
-    The wizard will analyse its structure and build a hierarchical lore index.
   </p>
 
   <div class="form-group">
@@ -19,10 +24,18 @@
     </div>
   </div>
 
+  {{!-- Per-selection status badge (updated by JS) --}}
   <div id="wizard-index-status"></div>
 
-  <div class="lw-nav lw-nav--end">
-    <button type="button" data-action="continueFromLocation">
+  <div class="lw-nav lw-nav--end" style="gap:.5rem;margin-top:.75rem">
+    <button type="button" data-action="goToEnrichmentFromLocation"
+            id="wizard-enrichment-btn"
+            data-has-global-index="{{hasAnyLoreIndex}}"
+            {{#unless hasAnyLoreIndex}}style="display:none"{{/unless}}>
+      Map Enrichment <i class="fas fa-map"></i>
+    </button>
+    <button type="button" data-action="continueFromLocation"
+            id="wizard-continue-btn" disabled>
       Continue <i class="fas fa-arrow-right"></i>
     </button>
   </div>

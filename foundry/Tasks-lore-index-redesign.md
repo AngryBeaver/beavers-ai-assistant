@@ -286,7 +286,7 @@ The hint text and recommended model label differ based on context. No other diff
 
 ---
 
-### Task 0.5 — Chapter-by-chapter indexing pass
+### Task 0.5 — Chapter-by-chapter indexing pass ✓ DONE
 
 After model is confirmed ready, process chapters one at a time.
 
@@ -328,9 +328,13 @@ After all chapters: generate Overview page → show summary:
 [Continue to Map Enrichment]  [Finish]
 ```
 
+The live log is driven by progress events emitted by `LoreIndexBuilder.indexChapter()`.
+The wizard appends each event to the log element directly without a full re-render.
+The improved log format (streaming, per-scene writes, area identifiers) is defined in Task 1.2.
+
 ---
 
-### Task 0.6 — Scene-by-scene map enrichment pass
+### Task 0.6 — Scene-by-scene map enrichment pass ✓ DONE
 
 Triggered from the wizard (either after indexing or standalone when index already exists).
 
@@ -351,7 +355,7 @@ Candidate images found near this scene:
 (No image — skip this scene)
 ```
 
-If the scene already has a `#### Map Layout` section:
+If the scene already has a `#### Connections` section:
 ```
 Scene: The Cave Entrance — map data exists.
   Current: map-cave-entrance.jpg (indexed 2025-03-10)
@@ -359,8 +363,8 @@ Scene: The Cave Entrance — map data exists.
 ```
 
 After GM makes a choice:
-- [Use] / [Replace] / [Add] → run vision AI call → append/replace `#### Map Layout` in
-  `Scene: <name>` page → show result inline → move to next scene
+- [Use] / [Replace] / [Add] → run vision AI call (see Task 2.3) → append/replace
+  `#### Connections` in `Scene: <name>` page → show result inline → move to next scene
 - [Skip] → move to next scene, existing data untouched
 
 Progress shown as "Scene 4 of 14". GM can [Stop enrichment] at any point; scenes already
@@ -370,7 +374,7 @@ After all scenes: done summary → [Finish]
 
 ---
 
-### Task 0.7 — Wizard entry from settings app
+### Task 0.7 — Wizard entry from settings app ✓ DONE
 
 In `AiAssistantSettingsApp`, replace the current Build Lore Index button with:
 
@@ -428,9 +432,134 @@ Pages are written incrementally so chapters already indexed survive if the wizar
 
 | Page name | Content |
 |---|---|
-| `Overview` | Global NPCs, factions, world context. Written last from chapter summaries. |
-| `Chapter: <name>` | Neutral arc summary — all scenes, stakes, themes. |
-| `Scene: <name>` | Full detail, sublocations flat list, NPCs present. Map layout appended by enrichment. |
+| `Overview` | NPC master index + factions + world context. Written last from chapter summaries. |
+| `Chapter: <name>` | Structured: overview, scene list, narrative flow, NPC knowledge delta. |
+| `Scene: <name>` | Full detail, areas with identifiers preserved. Connections appended by enrichment. |
+
+---
+
+**Chapter page format**
+
+The chapter page has four fixed sections. The AI prompt must produce them in this order:
+
+```markdown
+## Overview
+What this chapter is about — arc, theme, central tension. 2–4 sentences.
+
+## Scenes
+- **Scene: <name>** — one sentence: what happens and why it matters to the arc.
+- **Scene: <name>** — ...
+(one bullet per scene, in play order)
+
+## Narrative Flow
+How scenes connect. Which scenes are optional. What gates what. What information a scene
+unlocks for the next. Written as short prose or a brief list — not a flowchart.
+
+## NPCs
+| NPC | Role in chapter | New information revealed here |
+|---|---|---|
+| Gundren Rockseeker | Missing patron | Captured by Klarg; being delivered to "the Spider" |
+| Klarg | Bugbear chieftain | Commands the hideout; acts on orders from King Grol at Cragmaw Castle |
+| Sildar Hallwinter | Captive ally | Lord's Alliance agent; knows Gundren had a map to Wave Echo Cave |
+| The Spider | Unseen villain | Name only; pulling the strings behind goblin activity in the region |
+```
+
+The **NPCs** table records only what is **new in this chapter** — the delta, not the full
+biography. The same NPC appears in multiple chapter tables as knowledge accumulates.
+
+This is the structure the Interact AI uses for NPC knowledge stacking (see Task 1.4).
+
+---
+
+**Overview page format**
+
+The Overview page is a master index — it does not duplicate NPC detail that lives in chapter
+pages. It anchors the global picture and points to where detail lives.
+
+```markdown
+## World Context
+Brief setting introduction — geography, factions at play, the adventure's central conflict.
+
+## Factions
+| Faction | Goal | Key figure |
+|---|---|---|
+| The Zhentarim | Control trade routes | The Spider (identity unknown) |
+| Lord's Alliance | Stability in the region | Sildar Hallwinter |
+
+## NPC Index
+| NPC | Brief description | Appears in |
+|---|---|---|
+| Gundren Rockseeker | Dwarf prospector, quest giver | Chapter 1, Chapter 3 |
+| Sildar Hallwinter | Lord's Alliance agent | Chapter 1, Chapter 2 |
+| The Spider | Main villain, identity hidden | Chapter 1, 2, 3, 4 |
+| Klarg | Bugbear chieftain, Cragmaw goblin | Chapter 1 |
+
+The "Appears in" column tells the Interact AI which chapter NPC tables to stack when
+building a knowledge profile for a given NPC.
+```
+
+**Area identifier preservation in Scene pages**
+
+Many published adventures describe scene locations as numbered or lettered areas (e.g.,
+"1. Guard Post", "2. The Armoury", "A. Hidden Alcove"). These identifiers are the anchor
+between the text description and the map — the same numbers/letters that appear printed on
+the map image.
+
+The AI prompt for scene indexing must:
+- Detect and preserve all area identifiers exactly as they appear in the source (`1.`, `2a.`,
+  `A.`, `B.`, etc.) — never renumber or strip them.
+- Output each area as a labelled sub-entry within the scene block:
+
+```
+---SCENE: The Goblin Den---
+Summary of the scene and what is at stake.
+
+NPCs: Gorlag the Chief (area 3), 4× goblin guards (areas 1–2)
+
+#### Areas
+**1. Guard Post** — Two goblins on watch. Arrow slits cover the entrance tunnel.
+**2. Armoury** — Racks of crude spears and a locked chest.
+**3. Throne Room** — Gorlag sits here. Double doors to area 4.
+**4. Escape Tunnel** — Narrow crawl-space, exits to the forest (area outside scope).
+```
+
+If the source text uses only prose with no explicit identifiers, the AI writes area
+descriptions as a flat prose paragraph instead — no invented labels.
+
+The area block is the input that Task 2.3 (vision enrichment) will anchor its spatial
+analysis to. When a `#### Connections` section is appended (Task 2.3) it references these
+exact identifiers so the combined page is self-consistent.
+
+---
+
+**Streaming and incremental page writes**
+
+`indexChapter()` uses `stream()` rather than `call()`. As tokens arrive, the builder parses
+sentinel patterns and writes pages as soon as each block closes:
+
+| Pattern detected in stream | Action |
+|---|---|
+| `---CHAPTER: <name>---` | Start accumulating chapter block |
+| `---SCENE: <name>---` | Flush + write previous scene page (if any); start new scene block |
+| `**<id> — <area name>**` | Emit progress event: `{ type: 'area', id, name }` |
+| End of stream | Flush + write final scene page; write chapter summary page |
+
+The wizard (Task 0.5-b) subscribes to progress events and updates the live log. Pages are
+written incrementally — partial progress survives if the stream is interrupted.
+
+**`SceneArea` type:**
+
+```ts
+type SceneArea = {
+  areaId: string;       // "A", "7", "B2"; empty string when source has no labels
+  name?: string;        // "Guard Nook"
+  description: string;
+  npcs?: string[];
+  features?: string[];
+};
+```
+
+Not stored as JSON — serialised into the `#### Areas` markdown block and re-parsed on read.
 
 ---
 
@@ -451,6 +580,9 @@ Per-chapter calls are now the only approach — not a fallback. Removed.
 | Nothing selected | `Overview` only |
 | No index built | keyword-scored raw pages (current fallback) |
 
+The lore index is static and neutral — it has no concept of completed chapters or visited
+scenes. ContextBuilder only selects which pages to pass; it does not filter or annotate them.
+
 ---
 
 ### Task 1.5 — Chapter selector in GM panel
@@ -466,14 +598,33 @@ session; cached. Scene is proposed by Call 1 (Situation Assessment), not selecte
 
 **File:** `AiGmWindow.ts`
 
-**Call 1 — Situation Assessment:** chapter summary + session entries + session summary + active
-scene name → scene guess + recap + ranked NPC candidates (single structured response) →
-GM confirms scene + NPC in one card.
+**Call 1 — Situation Assessment:**
+Input: current chapter page + session journal entries + session summary + active Foundry
+scene name as a hint.
+Output (structured): best-guess current scene + confidence, brief recap of what has happened,
+1–3 ranked NPC interaction candidates.
+GM sees one confirmation card and confirms (or adjusts) scene + NPC.
 
-**Call 2 — Persona Response:** chapter summary + scene summary + situation recap + confirmed
-NPC → streaming persona response → adjustment buttons → Accept (unchanged).
+**Call 2 — Persona Response:**
+Input: chapter page + scene page + situation recap from Call 1 + confirmed NPC + topic.
+Output: streaming persona response → adjustment buttons → Accept.
 
-Context from Call 1 cached for adjustment button re-calls.
+Context from Call 1 is cached for adjustment button re-calls.
+
+**NPC knowledge — resolved by the AI, not by ContextBuilder**
+
+The chapter page NPC table records what new information about each NPC was revealed in that
+chapter. Multiple chapter pages for the same NPC stack into a timeline of accumulating
+knowledge. The AI receives all of this as part of the lore index pages plus the current
+state (session summary), and from that combination it determines:
+- What the party currently knows about an NPC
+- What they do not yet know (information in future chapters)
+- How the NPC would behave given that knowledge gap
+
+The lore index does not filter or annotate itself based on session progress. The AI does
+the reasoning. If at a later point the current state provides enough signal to pre-filter
+which chapter NPC entries are relevant, that can be done before passing context — but the
+index itself stays static.
 
 ---
 
@@ -512,13 +663,108 @@ Return `{ sceneName: string; imageUrls: string[] }[]`.
 
 **File:** `LoreIndexBuilder.ts` (`_enrichSceneWithMap`)
 
-For each confirmed map image, call `callWithImage()` to:
-- List numbered/lettered locations visible on the map
-- Describe direct adjacency between locations
-- Output as markdown list
+For each confirmed map image, call `callWithImage()` with:
+- The map image.
+- The existing `#### Areas` block from the scene page (if present), passed in the user
+  prompt so the AI can match its output labels to the text-derived identifiers.
 
-Write result under `#### Map Layout` in `Scene: <name>` page.
-Replace or append based on GM's choice in Task 0.6 Step B.
+The system prompt instructs the model to produce a compact adjacency list anchored to the
+same area identifiers. Connection types to recognise (mapped to the `AreaConnection.type`
+union): `open`, `door`, `hidden-door`, `ladder`, `stairs`, `secret-passage`.
+Add a `notes` value for anything that needs qualification (one-way, locked, perception DC,
+key location).
+
+**`AreaConnection` type (for `LoreIndexBuilder.ts`):**
+
+```ts
+type AreaConnection = {
+  fromAreaId: string;   // "A"
+  toAreaId: string;     // "B"
+  type: "open" | "door" | "hidden-door" | "ladder" | "stairs" | "secret-passage";
+  notes?: string;       // "key in Area B", "one-way", "DC 15 Perception"
+};
+```
+
+Connections are not stored as structured JSON — they are serialised into the `#### Connections`
+markdown block and re-parsed on read. The markdown is the source of truth.
+
+Output format written verbatim to `#### Connections`:
+
+```markdown
+#### Connections
+
+- `A -> B` : door
+- `B -> C` : open
+- `C -> lower-level` : ladder  *(one-way down)*
+- `A -> D` : hidden-door  *(DC 15 Perception)*
+```
+
+One entry per connection. Connections are directional only when asymmetric (e.g., one-way
+trap door). Symmetric connections are written once — `A -> B` implies `B -> A` unless a
+note says otherwise.
+
+If the map has no readable area identifiers, the AI uses the area names from the `#### Areas`
+block as keys (e.g., `Guard Room -> Armoury : door`). Text-derived identifiers take priority.
+
+Write result under `#### Connections` in the `Scene: <name>` page (not `#### Map Layout` —
+that name is retired). Replace or append based on GM's choice in Task 0.6 Step B.
+
+**Purpose:** the connections block is consumed by the Interact AI (Call 2 — Persona Response)
+to reason about NPC movement, retreat paths, and reinforcement routing without requiring the
+GM to explain map topology each session.
+
+---
+
+## Phase 3 — Storage & Rendering
+
+### Task 3.1 — Native markdown storage for lore index pages
+
+**Files:** `foundry/src/modules/JournalApi.ts`, `foundry/src/modules/LoreIndexBuilder.ts`,
+`foundry/src/modules/ContextBuilder.ts`
+
+Foundry V13 has built-in markdown support for journal pages via `text.format = 2` and
+`text.markdown`. Switch all lore index pages to this format so the AI reads and writes
+pure markdown with zero conversion overhead.
+
+**Why this matters:**
+- Currently: AI output (markdown) → `escapeHtml` → stored as HTML → `stripHtml` → fed back to AI.
+  That round-trip is lossy (table formatting, inline code, emphasis can degrade).
+- With format 2: AI output stored verbatim, read back verbatim. No conversion at any layer.
+- Foundry renders format-2 pages natively in the journal viewer — beautiful display,
+  no extra library or custom page type needed.
+
+**`JournalApi.ts`**
+
+Change `writePage` / `createPage` to write lore index pages with:
+```ts
+text: { markdown: content, format: 2 }
+```
+instead of:
+```ts
+text: { content: escapeHtml(content), format: 1 }
+```
+
+Change `readPages` to return `text.markdown` when `text.format === 2`, falling back to
+`stripHtml(text.content)` for legacy HTML pages (backwards compatibility).
+
+**`LoreIndexBuilder.ts`**
+
+Remove all `escapeHtml` / `unescapeHtml` / `stripHtml` calls on lore index page content.
+AI output goes straight to `JournalApi.writePage`. Reads come back as clean markdown.
+
+`collectEnrichmentScenes` currently calls `stripHtml(p.text?.content ?? '')` — replace with
+direct `text.markdown` read (via the updated JournalApi).
+
+**`ContextBuilder.ts`**
+
+Lore index page reads (`Chapter:`, `Scene:`, `Overview`) go through JournalApi — no change
+needed if JournalApi already returns clean markdown. Verify no residual `stripHtml` calls
+on index pages remain.
+
+**Backwards compatibility**
+
+Pages written by older versions of the module use format 1 (HTML). The JournalApi fallback
+(`stripHtml` when `format !== 2`) ensures those pages still work until rebuilt.
 
 ---
 

@@ -1,5 +1,6 @@
 import { NAMESPACE, SETTINGS, DEFAULTS } from '../definitions.js';
 import { AiService, AiResponse, GameData, CallOptions, ChunkType } from './AiService.js';
+import { fetchImageAsBase64 } from '../modules/loreIndexUtils.js';
 
 export class LocalAiService implements AiService {
   constructor(private game: GameData) {}
@@ -46,6 +47,45 @@ export class LocalAiService implements AiService {
       };
     }
     throw new Error('Unexpected LocalAI response format');
+  }
+
+  async callWithImage(
+    systemPrompt: string,
+    userPrompt: string,
+    imageUrl: string,
+    options?: CallOptions,
+  ): Promise<string> {
+    const model = options?.model;
+    if (!model) throw new Error('LocalAI vision call requires a model — select one in the wizard.');
+    const { base64, mediaType } = await fetchImageAsBase64(imageUrl);
+    const dataUrl = `data:${mediaType};base64,${base64}`;
+    const response = await fetch(`${this.baseURL}/v1/chat/completions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model,
+        max_tokens: options?.max_tokens ?? 2048,
+        messages: [
+          { role: 'system', content: systemPrompt },
+          {
+            role: 'user',
+            content: [
+              { type: 'image_url', image_url: { url: dataUrl } },
+              { type: 'text', text: userPrompt },
+            ],
+          },
+        ],
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`LocalAI vision error ${response.status}: ${response.statusText}`);
+    }
+
+    const data = (await response.json()) as any;
+    const text = data.choices?.[0]?.message?.content?.trim() ?? '';
+    if (!text) throw new Error('Unexpected LocalAI vision response format');
+    return text;
   }
 
   async stream(

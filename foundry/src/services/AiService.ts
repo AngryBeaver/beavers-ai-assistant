@@ -31,6 +31,13 @@ export interface AiService {
     onChunk: (chunk: string, type: ChunkType) => void,
     options?: CallOptions,
   ): Promise<string>;
+  /** Vision call — optional; throws a descriptive error if not supported. */
+  callWithImage?(
+    systemPrompt: string,
+    userPrompt: string,
+    imageUrl: string,
+    options?: CallOptions,
+  ): Promise<string>;
 }
 
 export namespace AiService {

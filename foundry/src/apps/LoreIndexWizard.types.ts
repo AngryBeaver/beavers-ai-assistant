@@ -1,6 +1,7 @@
 import type { AiProvider } from '../definitions.js';
 import type { ChapterCandidate } from '../modules/ChapterDetector.js';
 import type { IndexingPhase } from '../modules/IndexingPassRunner.js';
+import type { EnrichmentPhase, NamedImage } from '../modules/EnrichmentPassRunner.js';
 
 // ---------------------------------------------------------------------------
 // Location step
@@ -28,7 +29,7 @@ export interface ChapterCandidateView extends ChapterCandidate {
 // Wizard navigation
 // ---------------------------------------------------------------------------
 
-export type WizardStep = 'location' | 'mixed' | 'chapters' | 'model' | 'indexing';
+export type WizardStep = 'location' | 'mixed' | 'chapters' | 'model' | 'indexing' | 'enriching';
 export type IndexStatus = 'none' | 'exists';
 export type ModelContext = 'indexing' | 'vision';
 
@@ -60,11 +61,35 @@ export interface IndexingCtx {
 }
 
 // ---------------------------------------------------------------------------
+// Enrichment step view model
+// ---------------------------------------------------------------------------
+
+export interface EnrichmentCtx {
+  phase: EnrichmentPhase;
+  sceneName: string;
+  chapterName: string;
+  images: NamedImage[];
+  hasConnections: boolean;
+  sceneIdx: number;
+  totalScenes: number;
+  log: string[];
+  enrichedCount: number;
+  error: string | null;
+  selectedImageUrl: string;
+  hasSelectedImage: boolean;
+  isPreScene: boolean;
+  isRunning: boolean;
+  isComplete: boolean;
+}
+
+// ---------------------------------------------------------------------------
 // Full wizard context (passed to all step templates)
 // ---------------------------------------------------------------------------
 
 export interface WizardContext {
   // Common
+  phaseTitle: string; // "Indexing: Adventure Name" or "Map Enrichment: Adventure Name"
+  hasAnyLoreIndex: boolean; // true if the lore index journal exists with any pages
   locationName: string;
   locationType: 'folder' | 'journal';
   // Location step
@@ -83,8 +108,16 @@ export interface WizardContext {
   estimatedInputTokensFormatted: string;
   estimatedOutputTokensFormatted: string;
   claudeCostEstimate: string;
+  estimatedEnrichmentScenes: number;
+  visionImageTokensPerScene: number;
+  visionTextTokensPerScene: number;
+  visionOutputTokensPerScene: number;
+  claudeVisionCostPerScene: string;
+  claudeVisionCostEstimate: string;
   hasClaudeApiKey: boolean;
   localAiUrl: string;
   // Indexing step
   indexing: IndexingCtx;
+  // Enrichment step
+  enrichment: EnrichmentCtx;
 }

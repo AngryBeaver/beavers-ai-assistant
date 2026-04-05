@@ -8,7 +8,8 @@ import { AiService, CallOptions } from '../services/AiService.js';
 import { GameData } from './ContextBuilder.js';
 import { JournalApi } from './JournalApi.js';
 import { ChapterCandidate } from './ChapterDetector.js';
-import { stripHtml, escapeHtml, parseIndexOutput } from './loreIndexUtils.js';
+import { stripHtml, escapeHtml, unescapeHtml, parseIndexOutput } from './loreIndexUtils.js';
+import type { EnrichmentScene, NamedImage } from './EnrichmentPassRunner.js';
 
 /**
  * Builds a hierarchical lore index from adventure journal pages.
@@ -245,6 +246,310 @@ Write neutrally — no visited/unvisited framing. Keep it under 500 words.`;
     if (current !== null) sections.push(current);
 
     return sections[headerIndex] ? stripHtml(sections[headerIndex]) : '';
+  }
+
+  // ---------------------------------------------------------------------------
+  // Map enrichment
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Collect all indexed scenes and their candidate map images.
+   *
+   * Images are filtered to the same chapter as each scene — only images from
+   * the chapter's source journals/folders are offered as candidates.
+   *
+   * @param chapters  Confirmed chapter candidates (from the wizard). When empty
+   *                  (e.g. launched directly from location step) falls back to
+   *                  scanning all images from the fallback location.
+   * @param fallbackLocationId   Adventure location used when chapters is empty.
+   * @param fallbackLocationType Adventure location type used when chapters is empty.
+   */
+  collectEnrichmentScenes(
+    chapters: ChapterCandidate[],
+    fallbackLocationId: string,
+    fallbackLocationType: 'folder' | 'journal',
+  ): EnrichmentScene[] {
+    const indexJournal = this._getLoreIndexJournal();
+    if (!indexJournal) return [];
+
+    const pages: any[] = indexJournal.pages.contents as any[];
+
+    // Build chapter name → lore text (for scene association) and → images maps
+    const chapterTextMap = new Map<string, string>();
+    for (const p of pages) {
+      if (p.name?.startsWith('Chapter: ')) {
+        const name = (p.name as string).replace('Chapter: ', '');
+        chapterTextMap.set(name, stripHtml(p.text?.content ?? '').toLowerCase());
+      }
+    }
+
+    // Collect images per chapter from source
+    const chapterImagesMap = new Map<string, NamedImage[]>();
+    for (const chapter of chapters) {
+      chapterImagesMap.set(chapter.name, this._collectImagesForChapter(chapter));
+    }
+
+    // Fallback images when no chapter candidates available
+    const fallbackImages: NamedImage[] =
+      chapters.length === 0
+        ? this._collectAdventureImages(fallbackLocationId, fallbackLocationType).map((url) => ({
+            url,
+            name: url.split('/').pop()?.split('?')[0] ?? url,
+          }))
+        : [];
+
+    // Build one entry per Scene page
+    const scenes: EnrichmentScene[] = [];
+    for (const p of pages) {
+      if (!p.name?.startsWith('Scene: ')) continue;
+      const sceneName = (p.name as string).replace('Scene: ', '');
+      const pageText = stripHtml(p.text?.content ?? '');
+      const hasConnections = pageText.includes('#### Connections');
+
+      const lowerScene = sceneName.toLowerCase();
+      let chapterName = '';
+      let images: NamedImage[] = fallbackImages;
+
+      for (const [name, text] of chapterTextMap) {
+        if (text.includes(lowerScene)) {
+          chapterName = name;
+          images = chapterImagesMap.get(name) ?? fallbackImages;
+          break;
+        }
+      }
+
+      scenes.push({ sceneName, chapterName, images, hasConnections });
+    }
+
+    return scenes;
+  }
+
+  /**
+   * Run the vision AI call for one scene and write the `#### Connections` section.
+   *
+   * @param sceneName   Name of the `Scene: <name>` page to update.
+   * @param imageUrl    URL of the map image to analyse.
+   * @param mode        'replace' removes any existing Connections block first;
+   *                    'add' appends after any existing block.
+   * @param callOptions Model / token options (model required for LocalAI).
+   * @param onProgress  Callback for log lines shown in the wizard.
+   */
+  async enrichSceneWithMap(
+    sceneName: string,
+    imageUrl: string,
+    mode: 'replace' | 'add',
+    callOptions: CallOptions,
+    onProgress: (line: string) => void,
+  ): Promise<void> {
+    if (!this.#aiService.callWithImage) {
+      throw new Error('The selected AI provider does not support vision calls.');
+    }
+
+    // Read current scene page
+    const currentText = this._readScenePageText(sceneName);
+    if (currentText === null) {
+      throw new Error(`Scene page not found: "Scene: ${sceneName}"`);
+    }
+
+    const systemPrompt = `You are analysing a tabletop RPG map image to extract spatial connections between numbered or lettered areas.
+
+Output ONLY a markdown Connections block in this exact format:
+
+#### Connections
+
+- \`A -> B\` : door
+- \`B -> C\` : open
+- \`C -> lower-level\` : ladder  *(one-way down)*
+
+Connection types: open, door, hidden-door, ladder, stairs, secret-passage.
+Add a note in italics only when meaningful (e.g. one-way, locked, DC value, key location).
+Symmetric connections are written once. Write nothing else — no prose, no headings other than #### Connections.`;
+
+    const userPrompt = `Here is the complete description of the scene from the lore index:\n\n${currentText}\n\nUsing the scene description above and the map image, output ONLY the Connections block.`;
+
+    onProgress(`  → Calling vision AI…`);
+
+    const result = await this.#aiService.callWithImage(systemPrompt, userPrompt, imageUrl, {
+      ...callOptions,
+      max_tokens: 1024,
+    });
+
+    onProgress(`  → Writing connections…`);
+
+    // Build updated page text
+    let updatedText = currentText;
+    if (mode === 'replace') {
+      // Remove existing Connections block
+      updatedText = updatedText.replace(
+        /\n?#### Connections\n[\s\S]*?(?=\n#### |\n---|\n##|$)/,
+        '',
+      );
+    }
+
+    // Ensure the connections block starts on a new line
+    const connections = result.trim().startsWith('#### Connections')
+      ? result.trim()
+      : `#### Connections\n\n${result.trim()}`;
+    updatedText = updatedText.trimEnd() + '\n\n' + connections;
+
+    await JournalApi.writeJournalPage(LORE_INDEX_JOURNAL_NAME, {
+      name: `Scene: ${sceneName}`,
+      type: 'text',
+      text: { content: `<div>${escapeHtml(updatedText)}</div>`, format: 1 },
+    });
+
+    onProgress(`  ✓ Connections written.`);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Private — enrichment helpers
+  // ---------------------------------------------------------------------------
+
+  private _getLoreIndexJournal(): any | null {
+    const modFolder = (this.#game as any).folders?.find(
+      (f: any) => f.name === MODULE_FOLDER_NAME && f.type === 'JournalEntry',
+    );
+    if (!modFolder) return null;
+    return (
+      (this.#game as any).journal?.find(
+        (j: any) => j.folder?.id === modFolder.id && j.name === LORE_INDEX_JOURNAL_NAME,
+      ) ?? null
+    );
+  }
+
+  private _readScenePageText(sceneName: string): string | null {
+    const journal = this._getLoreIndexJournal();
+    if (!journal) return null;
+    const page = (journal.pages.contents as any[]).find(
+      (p: any) => p.name === `Scene: ${sceneName}`,
+    );
+    if (!page) return null;
+    const html: string = page.text?.content ?? '';
+    // Strip the outer <div> wrapper added by _writeChapterPages, then unescape
+    const inner = html.replace(/^<div>([\s\S]*)<\/div>$/, '$1');
+    return unescapeHtml(inner);
+  }
+
+  /**
+   * Extract all images from a chapter's source content, with names derived from:
+   * alt text → figcaption → nearest heading before the image → page name.
+   */
+  private _collectImagesForChapter(chapter: ChapterCandidate): NamedImage[] {
+    const images: NamedImage[] = [];
+    const journals: any[] = [];
+
+    if (chapter.sourceType === 'folder') {
+      this._collectJournalsInFolder(chapter.id, journals);
+    } else if (chapter.sourceType === 'journal') {
+      const j = (this.#game as any).journal?.find((j: any) => j.id === chapter.id);
+      if (j) journals.push(j);
+    } else if (chapter.sourceType === 'header') {
+      const journalId = chapter.id.split('::h::')[0];
+      const j = (this.#game as any).journal?.find((j: any) => j.id === journalId);
+      if (j) journals.push(j);
+    }
+
+    for (const journal of journals) {
+      for (const page of journal.pages.contents as any[]) {
+        if (page.type === 'image' && page.src) {
+          images.push({ url: page.src as string, name: (page.name as string) || journal.name });
+        }
+        const html: string = page.text?.content ?? '';
+        images.push(...this._extractImagesWithNames(html, (page.name as string) || journal.name));
+      }
+    }
+
+    // Deduplicate by URL, preserving first occurrence
+    const seen = new Set<string>();
+    return images.filter((img) => {
+      if (seen.has(img.url)) return false;
+      seen.add(img.url);
+      return true;
+    });
+  }
+
+  /**
+   * Scan HTML content for <img> tags and return each with a derived name.
+   * Priority: alt attribute → <figcaption> immediately after → nearest preceding
+   * heading → fallback (page/journal name passed in).
+   */
+  private _extractImagesWithNames(html: string, fallback: string): NamedImage[] {
+    const results: NamedImage[] = [];
+    let lastHeading = fallback;
+
+    const tokenRe =
+      /<(h[1-6])[^>]*>[\s\S]*?<\/\1>|<img\s[^>]*\/?>|<figcaption[^>]*>[\s\S]*?<\/figcaption>/gi;
+
+    let lastImgIdx = -1;
+
+    for (const match of html.matchAll(tokenRe)) {
+      const tag = match[0];
+
+      if (/^<h[1-6]/i.test(tag)) {
+        lastHeading = stripHtml(tag).trim() || lastHeading;
+        lastImgIdx = -1;
+      } else if (/^<img/i.test(tag)) {
+        const srcMatch = tag.match(/src=["']([^"']+)["']/i);
+        if (!srcMatch) continue;
+        const url = srcMatch[1];
+        const altMatch = tag.match(/alt=["']([^"']*?)["']/i);
+        const alt = altMatch?.[1]?.trim() ?? '';
+        results.push({ url, name: alt || lastHeading });
+        lastImgIdx = results.length - 1;
+      } else if (/^<figcaption/i.test(tag) && lastImgIdx >= 0) {
+        // Upgrade the immediately preceding image's name with the caption if its
+        // name is still just the heading fallback (alt was empty)
+        const caption = stripHtml(tag).trim();
+        if (caption && results[lastImgIdx].name === lastHeading) {
+          results[lastImgIdx] = { ...results[lastImgIdx], name: caption };
+        }
+        lastImgIdx = -1;
+      }
+    }
+
+    return results;
+  }
+
+  private _collectAdventureImages(
+    locationId: string,
+    locationType: 'folder' | 'journal',
+  ): string[] {
+    const urls: string[] = [];
+    const journals: any[] = [];
+
+    if (locationType === 'folder') {
+      this._collectJournalsInFolder(locationId, journals);
+    } else {
+      const j = (this.#game as any).journal?.find((j: any) => j.id === locationId);
+      if (j) journals.push(j);
+    }
+
+    for (const journal of journals) {
+      for (const page of journal.pages.contents as any[]) {
+        if (page.type === 'image' && page.src) {
+          urls.push(page.src as string);
+        }
+        const html: string = page.text?.content ?? '';
+        for (const match of html.matchAll(/<img[^>]+src=["']([^"']+)["']/gi)) {
+          urls.push(match[1]);
+        }
+      }
+    }
+
+    return [...new Set(urls)];
+  }
+
+  private _collectJournalsInFolder(folderId: string, out: any[]): void {
+    const journals =
+      (this.#game as any).journal?.filter((j: any) => j.folder?.id === folderId) ?? [];
+    out.push(...journals);
+    const subfolders =
+      (this.#game as any).folders?.filter(
+        (f: any) => f.folder?.id === folderId && f.type === 'JournalEntry',
+      ) ?? [];
+    for (const sf of subfolders) {
+      this._collectJournalsInFolder(sf.id, out);
+    }
   }
 
   // ---------------------------------------------------------------------------

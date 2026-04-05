@@ -1,5 +1,10 @@
-import { DEFAULTS, NAMESPACE, SETTINGS } from '../../definitions.js';
-import { LoreIndexBuilder } from '../../modules/LoreIndexBuilder.js';
+import {
+  DEFAULTS,
+  NAMESPACE,
+  SETTINGS,
+  MODULE_FOLDER_NAME,
+  LORE_INDEX_JOURNAL_NAME,
+} from '../../definitions.js';
 import { LoreIndexWizard } from '../LoreIndexWizard.js';
 
 interface AiAssistantContext {
@@ -19,6 +24,7 @@ interface AiAssistantContext {
   journalFolders: string[];
   defaultClaudeModel: string;
   defaultLocalAiUrl: string;
+  hasAnyLoreIndex: boolean;
 }
 
 export class AiAssistantSettingsApp extends (foundry.applications.api.HandlebarsApplicationMixin(
@@ -31,7 +37,6 @@ export class AiAssistantSettingsApp extends (foundry.applications.api.Handlebars
     position: { width: 500 },
     actions: {
       save: AiAssistantSettingsApp._onSave,
-      buildLoreIndex: AiAssistantSettingsApp._onBuildLoreIndex,
       openLoreWizard: AiAssistantSettingsApp._onOpenLoreWizard,
       refreshModels: AiAssistantSettingsApp._onRefreshModels,
       installModel: AiAssistantSettingsApp._onInstallModel,
@@ -113,7 +118,19 @@ export class AiAssistantSettingsApp extends (foundry.applications.api.Handlebars
       ).map((f: any) => f.name as string),
       defaultClaudeModel: DEFAULTS.CLAUDE_MODEL,
       defaultLocalAiUrl: DEFAULTS.LOCAL_AI_URL,
+      hasAnyLoreIndex: this._hasAnyLoreIndex(),
     };
+  }
+
+  private _hasAnyLoreIndex(): boolean {
+    const modFolder = (game.folders as any)?.find(
+      (f: any) => f.name === MODULE_FOLDER_NAME && f.type === 'JournalEntry',
+    );
+    if (!modFolder) return false;
+    const indexJournal = (game.journal as any)?.find(
+      (j: any) => j.folder?.id === modFolder.id && j.name === LORE_INDEX_JOURNAL_NAME,
+    );
+    return !!indexJournal?.pages.size;
   }
 
   static async _onSave(this: AiAssistantSettingsApp): Promise<void> {
@@ -190,19 +207,6 @@ export class AiAssistantSettingsApp extends (foundry.applications.api.Handlebars
       );
     } catch (err) {
       ui.notifications.error(`Install failed: ${(err as Error).message}`);
-    }
-  }
-
-  static async _onBuildLoreIndex(this: AiAssistantSettingsApp): Promise<void> {
-    try {
-      await AiAssistantSettingsApp._onSave.call(this);
-      const builder = new LoreIndexBuilder(game as any);
-      ui.notifications.info('Building lore index — please wait...');
-      await builder.build();
-      ui.notifications.info('✓ Lore index built successfully.');
-    } catch (err) {
-      console.error('Lore index build failed:', err);
-      ui.notifications.error(`Lore index build failed: ${(err as Error).message}`);
     }
   }
 

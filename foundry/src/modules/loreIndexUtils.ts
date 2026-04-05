@@ -26,6 +26,75 @@ export function escapeHtml(text: string): string {
   return text.replace(/[&<>"']/g, (char) => map[char]);
 }
 
+export function unescapeHtml(text: string): string {
+  return text
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#039;/g, "'");
+}
+
+/**
+ * Fetch an image at any URL and return it as a base64 string with its media type.
+ * Works for same-origin Foundry paths (e.g. `modules/...`) and external URLs.
+ */
+const _VISION_SAFE_TYPES = new Set(['image/jpeg', 'image/png', 'image/gif']);
+
+export async function fetchImageAsBase64(
+  imageUrl: string,
+): Promise<{ base64: string; mediaType: string }> {
+  const response = await fetch(imageUrl);
+  if (!response.ok) throw new Error(`Failed to fetch image (${response.status}): ${imageUrl}`);
+  const buffer = await response.arrayBuffer();
+
+  const contentType = response.headers.get('content-type') ?? '';
+  const detectedType = contentType.split(';')[0].trim();
+  const mediaType =
+    (detectedType.startsWith('image/') ? detectedType : null) ?? _mediaTypeFromUrl(imageUrl);
+
+  // Convert to JPEG if the format isn't supported by typical vision backends (e.g. webp)
+  if (!_VISION_SAFE_TYPES.has(mediaType)) {
+    const blob = new Blob([buffer], { type: mediaType });
+    const objectUrl = URL.createObjectURL(blob);
+    try {
+      const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+        const el = new Image();
+        el.onload = () => resolve(el);
+        el.onerror = reject;
+        el.src = objectUrl;
+      });
+      const canvas = document.createElement('canvas');
+      canvas.width = img.naturalWidth;
+      canvas.height = img.naturalHeight;
+      canvas.getContext('2d')!.drawImage(img, 0, 0);
+      const dataUrl = canvas.toDataURL('image/jpeg', 0.92);
+      return { base64: dataUrl.split(',')[1], mediaType: 'image/jpeg' };
+    } finally {
+      URL.revokeObjectURL(objectUrl);
+    }
+  }
+
+  const bytes = new Uint8Array(buffer);
+  let binary = '';
+  for (let i = 0; i < bytes.length; i++) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  return { base64: btoa(binary), mediaType };
+}
+
+function _mediaTypeFromUrl(url: string): string {
+  const ext = url.split('?')[0].split('.').pop()?.toLowerCase() ?? '';
+  const map: Record<string, string> = {
+    jpg: 'image/jpeg',
+    jpeg: 'image/jpeg',
+    png: 'image/png',
+    gif: 'image/gif',
+    webp: 'image/webp',
+  };
+  return map[ext] ?? 'image/jpeg';
+}
+
 // ---------------------------------------------------------------------------
 // AI output parser
 // ---------------------------------------------------------------------------

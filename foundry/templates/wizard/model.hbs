@@ -1,11 +1,11 @@
 <div class="beavers-ai-assistant lore-wizard standard-form">
 
-  <p class="lw-intro">
-    <i class="fas {{#if (eq locationType "folder")}}fa-folder{{else}}fa-book{{/if}}"></i>
-    {{locationName}}
-  </p>
+  {{#if phaseTitle}}
+  <p class="lw-phase-title">{{phaseTitle}}</p>
+  {{/if}}
 
-  {{!-- Token / cost estimate --}}
+  {{!-- Token / cost estimate — indexing context only --}}
+  {{#unless (eq modelContext "vision")}}
   <fieldset>
     <legend>Estimate (selected chapters)</legend>
     <table class="lw-table">
@@ -30,6 +30,49 @@
       </tr>
     </table>
   </fieldset>
+  {{/unless}}
+
+  {{!-- Vision / enrichment cost estimate --}}
+  {{#if (eq modelContext "vision")}}
+  <fieldset>
+    <legend>Estimate (map enrichment · {{estimatedEnrichmentScenes}} scenes)</legend>
+    <table class="lw-table">
+      <tr>
+        <td class="lw-label" style="font-style:italic;opacity:.7" colspan="2">Per scene</td>
+      </tr>
+      <tr>
+        <td class="lw-label">Image input (~12 tiles)</td>
+        <td class="lw-value">{{visionImageTokensPerScene}} tokens</td>
+      </tr>
+      <tr>
+        <td class="lw-label">Scene text input</td>
+        <td class="lw-value">~{{visionTextTokensPerScene}} tokens</td>
+      </tr>
+      <tr>
+        <td class="lw-label">Output (max)</td>
+        <td class="lw-value">{{visionOutputTokensPerScene}} tokens</td>
+      </tr>
+      <tr>
+        <td class="lw-label">Cost per scene (Claude)</td>
+        <td class="lw-value">{{claudeVisionCostPerScene}}</td>
+      </tr>
+      <tr>
+        <td class="lw-label" style="font-style:italic;opacity:.7" colspan="2">Total (× {{estimatedEnrichmentScenes}} scenes)</td>
+      </tr>
+      <tr>
+        <td class="lw-label">Claude Sonnet</td>
+        <td class="lw-value">
+          {{claudeVisionCostEstimate}}
+          <span style="font-size:.8em;opacity:.7">($3 + $15 per 1M tokens)</span>
+        </td>
+      </tr>
+      <tr>
+        <td class="lw-label">LocalAI</td>
+        <td style="padding:.2rem 0">Free</td>
+      </tr>
+    </table>
+  </fieldset>
+  {{/if}}
 
   {{!-- Provider selector --}}
   <div class="form-group" style="margin-bottom:1rem">
@@ -113,6 +156,17 @@
 
   {{!-- Navigation --}}
   <div class="lw-nav lw-nav--between">
+    {{#if (eq modelContext "vision")}}
+    <button type="button" data-action="backFromVisionModel">
+      <i class="fas fa-arrow-left"></i> Back
+    </button>
+    <button type="button" data-action="startEnrichment"
+            {{#if (eq selectedProvider "local-ai")}}
+              {{#unless selectedModel}}disabled{{/unless}}
+            {{/if}}>
+      Continue <i class="fas fa-arrow-right"></i>
+    </button>
+    {{else}}
     <button type="button" data-action="backToChapters">
       <i class="fas fa-arrow-left"></i> Back
     </button>
@@ -120,8 +174,9 @@
             {{#if (eq selectedProvider "local-ai")}}
               {{#unless selectedModel}}disabled{{/unless}}
             {{/if}}>
-      <i class="fas fa-wand-magic-sparkles"></i> Start Indexing
+      Continue <i class="fas fa-arrow-right"></i>
     </button>
+    {{/if}}
   </div>
 
 </div>

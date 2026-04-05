@@ -17,12 +17,14 @@ import {
 } from '../modules/ChapterDetector.js';
 import { LoreIndexBuilder } from '../modules/LoreIndexBuilder.js';
 import { IndexingPassRunner } from '../modules/IndexingPassRunner.js';
+import { EnrichmentPassRunner } from '../modules/EnrichmentPassRunner.js';
 import type {
   LocationItem,
   WizardStep,
   IndexStatus,
   ModelContext,
   IndexingCtx,
+  EnrichmentCtx,
   WizardContext,
   ChapterCandidateView,
 } from './LoreIndexWizard.types.js';
@@ -93,6 +95,16 @@ export class LoreIndexWizard extends foundry.applications.api.HandlebarsApplicat
       generateOverview: LoreIndexWizard._onGenerateOverview,
       finishWizard: LoreIndexWizard._onFinishWizard,
       continueToEnrichment: LoreIndexWizard._onContinueToEnrichment,
+      goToEnrichmentFromLocation: LoreIndexWizard._onGoToEnrichmentFromLocation,
+      // Vision model step
+      backFromVisionModel: LoreIndexWizard._onBackFromVisionModel,
+      startEnrichment: LoreIndexWizard._onStartEnrichment,
+      // Enrichment pass
+      enrichReplaceScene: LoreIndexWizard._onEnrichReplaceScene,
+      enrichAddScene: LoreIndexWizard._onEnrichAddScene,
+      enrichSkipScene: LoreIndexWizard._onEnrichSkipScene,
+      stopEnrichment: LoreIndexWizard._onStopEnrichment,
+      finishEnrichment: LoreIndexWizard._onFinishEnrichment,
     },
   };
 
@@ -102,6 +114,7 @@ export class LoreIndexWizard extends foundry.applications.api.HandlebarsApplicat
     chapters: { template: `modules/${NAMESPACE}/templates/wizard/chapters.hbs` },
     model: { template: `modules/${NAMESPACE}/templates/wizard/model.hbs` },
     indexing: { template: `modules/${NAMESPACE}/templates/wizard/indexing.hbs` },
+    enriching: { template: `modules/${NAMESPACE}/templates/wizard/enriching.hbs` },
   };
 
   private static _instance: LoreIndexWizard | null = null;
@@ -123,6 +136,12 @@ export class LoreIndexWizard extends foundry.applications.api.HandlebarsApplicat
 
   // Indexing pass state — managed by the runner
   private readonly _runner = new IndexingPassRunner();
+
+  // Enrichment pass state
+  private readonly _enrichmentRunner = new EnrichmentPassRunner();
+  private _enrichmentSelectedImageUrl = '';
+  private _enrichmentEntryPoint: 'indexing' | 'location' = 'indexing';
+  private _estimatedEnrichmentScenes = 0;
 
   private readonly _detector = new ChapterDetector(makeFoundryGameAccessor());
 
@@ -157,6 +176,9 @@ export class LoreIndexWizard extends foundry.applications.api.HandlebarsApplicat
     if (this._step === 'indexing' && this._runner.phase === 'overview') {
       void this._runIndexingOverview();
     }
+    if (this._step === 'enriching' && this._enrichmentRunner.phase === 'pre_scene') {
+      this._setupEnrichingImageListeners();
+    }
   }
 
   // ---------------------------------------------------------------------------
@@ -166,31 +188,48 @@ export class LoreIndexWizard extends foundry.applications.api.HandlebarsApplicat
   private _setupLocationBadge(): void {
     const select = this.element.querySelector<HTMLSelectElement>('#wizard-location');
     const badge = this.element.querySelector<HTMLElement>('#wizard-index-status');
-    if (!select || !badge) return;
+    const continueBtn = this.element.querySelector<HTMLButtonElement>('#wizard-continue-btn');
+    const enrichmentBtn = this.element.querySelector<HTMLButtonElement>('#wizard-enrichment-btn');
+    if (!select) return;
+
+    const hasGlobalIndex = enrichmentBtn?.dataset.hasGlobalIndex === 'true';
 
     const update = (): void => {
       const opt = select.options[select.selectedIndex];
-      if (!opt?.value) {
-        badge.innerHTML = '';
+      const hasValue = !!opt?.value;
+
+      if (continueBtn) continueBtn.disabled = !hasValue;
+
+      if (!hasValue) {
+        if (badge) badge.innerHTML = '';
+        if (enrichmentBtn && !hasGlobalIndex) enrichmentBtn.style.display = 'none';
         return;
       }
+
       const type = (opt.dataset.type ?? 'folder') as 'folder' | 'journal';
-      const status = this._detectIndexStatusFor(opt.value, type);
-      if (status === 'exists') {
-        badge.innerHTML =
-          `<div style="padding:.6rem .75rem;background:var(--color-level-success-bg,#d4edda);` +
-          `border:1px solid var(--color-level-success,#28a745);border-radius:4px;font-size:.875em;margin-top:.75rem">` +
-          `<i class="fas fa-circle-check"></i> A lore index exists for this adventure.</div>`;
-      } else {
-        badge.innerHTML =
-          `<div style="padding:.6rem .75rem;background:var(--color-level-info-bg,#e8f4fd);` +
-          `border:1px solid var(--color-level-info,#4a90d9);border-radius:4px;font-size:.875em;margin-top:.75rem">` +
-          `<i class="fas fa-circle-info"></i> No lore index found. Continuing will build one.</div>`;
+      const hasIndex = this._detectIndexStatusFor(opt.value, type) === 'exists';
+
+      if (badge) {
+        badge.innerHTML = hasIndex
+          ? `<div class="lw-alert lw-alert--info" style="margin-top:.75rem">` +
+            `<i class="fas fa-circle-info"></i> Continuing will rebuild the existing index.</div>`
+          : `<div class="lw-alert lw-alert--info" style="margin-top:.75rem">` +
+            `<i class="fas fa-circle-info"></i> No lore index found. Continuing will build one.</div>`;
+      }
+
+      if (continueBtn) {
+        continueBtn.innerHTML = hasIndex
+          ? 'Rebuild <i class="fas fa-arrow-right"></i>'
+          : 'Continue <i class="fas fa-arrow-right"></i>';
+      }
+
+      if (enrichmentBtn) {
+        enrichmentBtn.style.display = hasIndex ? '' : 'none';
       }
     };
 
     select.addEventListener('change', update);
-    if (select.value) update();
+    update();
   }
 
   // ---------------------------------------------------------------------------
@@ -281,6 +320,28 @@ export class LoreIndexWizard extends foundry.applications.api.HandlebarsApplicat
   }
 
   // ---------------------------------------------------------------------------
+  // Enriching step — image radio listeners
+  // ---------------------------------------------------------------------------
+
+  private _setupEnrichingImageListeners(): void {
+    const radios = Array.from(
+      this.element.querySelectorAll<HTMLInputElement>('input[name="enrichment-image"]'),
+    );
+    // Auto-select the first image
+    if (radios.length > 0 && !radios.some((r) => r.checked)) {
+      radios[0].checked = true;
+      this._enrichmentSelectedImageUrl = radios[0].value;
+    }
+    for (const radio of radios) {
+      radio.addEventListener('change', () => {
+        this._enrichmentSelectedImageUrl = radio.value;
+        // Re-render to update disabled state of action buttons
+        this.render({ force: true });
+      });
+    }
+  }
+
+  // ---------------------------------------------------------------------------
   // Context
   // ---------------------------------------------------------------------------
 
@@ -288,6 +349,8 @@ export class LoreIndexWizard extends foundry.applications.api.HandlebarsApplicat
     const inputTokens = this._estimateInputTokens();
     const outputTokens = this._estimateOutputTokens();
     return {
+      phaseTitle: this._phaseTitle(),
+      hasAnyLoreIndex: this._hasAnyLoreIndex(),
       locationName: this._selectedLocation?.name ?? '',
       locationType: this._selectedLocation?.type ?? 'folder',
       locations: this._collectLocations(),
@@ -310,10 +373,38 @@ export class LoreIndexWizard extends foundry.applications.api.HandlebarsApplicat
       estimatedInputTokensFormatted: inputTokens.toLocaleString(),
       estimatedOutputTokensFormatted: outputTokens.toLocaleString(),
       claudeCostEstimate: this._claudeCostFromTokens(inputTokens, outputTokens),
+      estimatedEnrichmentScenes: this._estimatedEnrichmentScenes,
+      visionImageTokensPerScene: LoreIndexWizard._VISION_IMAGE_TOKENS,
+      visionTextTokensPerScene: LoreIndexWizard._VISION_TEXT_TOKENS,
+      visionOutputTokensPerScene: LoreIndexWizard._VISION_OUTPUT_TOKENS,
+      claudeVisionCostPerScene: this._claudeVisionCostPerScene(),
+      claudeVisionCostEstimate: this._claudeVisionCostEstimate(this._estimatedEnrichmentScenes),
       hasClaudeApiKey: this._hasClaudeApiKey(),
       localAiUrl: this._localAiUrl(),
       indexing: this._buildIndexingCtx(),
+      enrichment: this._buildEnrichmentCtx(),
     };
+  }
+
+  private _phaseTitle(): string {
+    const name = this._selectedLocation?.name ?? '';
+    const suffix = name ? `: ${name}` : '';
+    if (this._step === 'location') return '';
+    if (this._step === 'enriching' || (this._step === 'model' && this._modelContext === 'vision')) {
+      return `Map Enrichment${suffix}`;
+    }
+    return `Indexing${suffix}`;
+  }
+
+  private _hasAnyLoreIndex(): boolean {
+    const modFolder = (game.folders as any)?.find(
+      (f: any) => f.name === MODULE_FOLDER_NAME && f.type === 'JournalEntry',
+    );
+    if (!modFolder) return false;
+    const indexJournal = (game.journal as any)?.find(
+      (j: any) => j.folder?.id === modFolder.id && j.name === LORE_INDEX_JOURNAL_NAME,
+    );
+    return !!indexJournal?.pages.size;
   }
 
   private _buildIndexingCtx(): IndexingCtx {
@@ -338,6 +429,28 @@ export class LoreIndexWizard extends foundry.applications.api.HandlebarsApplicat
       isBetween: phase === 'between',
       isOverview: phase === 'overview',
       isComplete: phase === 'complete',
+    };
+  }
+
+  private _buildEnrichmentCtx(): EnrichmentCtx {
+    const r = this._enrichmentRunner;
+    const scene = r.currentScene;
+    return {
+      phase: r.phase,
+      sceneName: scene?.sceneName ?? '',
+      chapterName: scene?.chapterName ?? '',
+      images: scene?.images ?? [],
+      hasConnections: scene?.hasConnections ?? false,
+      sceneIdx: r.currentIdx + 1,
+      totalScenes: r.totalScenes,
+      log: r.log,
+      enrichedCount: r.enrichedCount,
+      error: r.error,
+      selectedImageUrl: this._enrichmentSelectedImageUrl,
+      hasSelectedImage: !!this._enrichmentSelectedImageUrl,
+      isPreScene: r.phase === 'pre_scene',
+      isRunning: r.phase === 'running',
+      isComplete: r.phase === 'complete',
     };
   }
 
@@ -406,6 +519,29 @@ export class LoreIndexWizard extends foundry.applications.api.HandlebarsApplicat
   private _claudeCostFromTokens(inputTokens: number, outputTokens: number): string {
     if (inputTokens === 0) return '—';
     const cost = (inputTokens / 1_000_000) * 3 + (outputTokens / 1_000_000) * 15;
+    return cost < 0.01 ? '< $0.01' : `~$${cost.toFixed(2)}`;
+  }
+
+  // Image: ~12 tiles × 1,601 tokens (large map ~2000×1500 resized to 1568×1176)
+  // Scene text: full lore-index scene page, typically ~1,500 tokens
+  // Output: max_tokens cap on connections block
+  private static readonly _VISION_IMAGE_TOKENS = 20_000;
+  private static readonly _VISION_TEXT_TOKENS = 1_500;
+  private static readonly _VISION_OUTPUT_TOKENS = 1_024;
+
+  private _claudeVisionCostPerScene(): string {
+    const input = LoreIndexWizard._VISION_IMAGE_TOKENS + LoreIndexWizard._VISION_TEXT_TOKENS;
+    const output = LoreIndexWizard._VISION_OUTPUT_TOKENS;
+    const cost = (input / 1_000_000) * 3 + (output / 1_000_000) * 15;
+    return cost < 0.01 ? '< $0.01' : `~$${cost.toFixed(3)}`;
+  }
+
+  private _claudeVisionCostEstimate(sceneCount: number): string {
+    if (sceneCount === 0) return '—';
+    const input =
+      sceneCount * (LoreIndexWizard._VISION_IMAGE_TOKENS + LoreIndexWizard._VISION_TEXT_TOKENS);
+    const output = sceneCount * LoreIndexWizard._VISION_OUTPUT_TOKENS;
+    const cost = (input / 1_000_000) * 3 + (output / 1_000_000) * 15;
     return cost < 0.01 ? '< $0.01' : `~$${cost.toFixed(2)}`;
   }
 
@@ -614,8 +750,90 @@ export class LoreIndexWizard extends foundry.applications.api.HandlebarsApplicat
   }
 
   static async _onContinueToEnrichment(this: LoreIndexWizard): Promise<void> {
-    // Task 0.6 — map enrichment pass (not yet implemented)
-    (ui as any).notifications.info('Map enrichment — coming in Task 0.6.');
+    this._enrichmentEntryPoint = 'indexing';
+    await LoreIndexWizard._openVisionModelStep.call(this);
+  }
+
+  static async _onGoToEnrichmentFromLocation(this: LoreIndexWizard): Promise<void> {
+    const select = this.element.querySelector<HTMLSelectElement>('#wizard-location');
+    const opt = select?.options[select.selectedIndex];
+    if (!opt?.value) return;
+    const type = (opt.dataset.type ?? 'folder') as 'folder' | 'journal';
+    this._selectedLocation = {
+      id: opt.value,
+      type,
+      name: this._resolveLocationName(opt.value, type),
+    };
+    this._enrichmentEntryPoint = 'location';
+    await LoreIndexWizard._openVisionModelStep.call(this);
+  }
+
+  private static async _openVisionModelStep(this: LoreIndexWizard): Promise<void> {
+    this._modelContext = 'vision';
+    this._selectedProvider =
+      ((game.settings as any)?.get(NAMESPACE, SETTINGS.AI_PROVIDER) as AiProvider) ||
+      DEFAULTS.AI_PROVIDER;
+    if (
+      this._selectedProvider === 'local-ai' &&
+      this._availableModels.length === 0 &&
+      !this._modelFetchError
+    ) {
+      await this._fetchModels();
+    }
+    try {
+      const scenes = this._createBuilder().collectEnrichmentScenes(
+        this._chapters,
+        this._selectedLocation!.id,
+        this._selectedLocation!.type,
+      );
+      this._estimatedEnrichmentScenes = scenes.length;
+    } catch {
+      this._estimatedEnrichmentScenes = 0;
+    }
+    this._goToStep('model');
+  }
+
+  static async _onBackFromVisionModel(this: LoreIndexWizard): Promise<void> {
+    this._modelContext = 'indexing';
+    this._goToStep(this._enrichmentEntryPoint === 'location' ? 'location' : 'indexing');
+  }
+
+  static async _onStartEnrichment(this: LoreIndexWizard): Promise<void> {
+    if (!this._selectedLocation) {
+      (ui as any).notifications.warn('No adventure location selected.');
+      return;
+    }
+    const scenes = this._createBuilder().collectEnrichmentScenes(
+      this._chapters,
+      this._selectedLocation.id,
+      this._selectedLocation.type,
+    );
+    this._enrichmentSelectedImageUrl = '';
+    this._enrichmentRunner.start(scenes);
+    this._goToStep('enriching');
+  }
+
+  static async _onEnrichReplaceScene(this: LoreIndexWizard): Promise<void> {
+    await this._runSceneEnrichment('replace');
+  }
+
+  static async _onEnrichAddScene(this: LoreIndexWizard): Promise<void> {
+    await this._runSceneEnrichment('add');
+  }
+
+  static async _onEnrichSkipScene(this: LoreIndexWizard): Promise<void> {
+    this._enrichmentSelectedImageUrl = '';
+    this._enrichmentRunner.skipCurrent();
+    this.render({ force: true });
+  }
+
+  static async _onStopEnrichment(this: LoreIndexWizard): Promise<void> {
+    this._enrichmentRunner.stopEarly();
+    this.render({ force: true });
+  }
+
+  static async _onFinishEnrichment(this: LoreIndexWizard): Promise<void> {
+    await this.close();
   }
 
   // ---------------------------------------------------------------------------
@@ -674,6 +892,47 @@ export class LoreIndexWizard extends foundry.applications.api.HandlebarsApplicat
   private _addLogLine(line: string): void {
     this._runner.addLogLine(line);
     const logEl = this.element?.querySelector<HTMLElement>('#indexing-log');
+    if (logEl) {
+      const div = document.createElement('div');
+      div.textContent = line;
+      logEl.appendChild(div);
+      logEl.scrollTop = logEl.scrollHeight;
+    }
+  }
+
+  private async _runSceneEnrichment(mode: 'replace' | 'add'): Promise<void> {
+    const scene = this._enrichmentRunner.currentScene;
+    if (!scene) return;
+
+    const imageUrl = this._enrichmentSelectedImageUrl;
+    if (!imageUrl) {
+      (ui as any).notifications.warn('Select an image before enriching.');
+      return;
+    }
+
+    this._enrichmentRunner.beginRun();
+    this.render({ force: true });
+
+    try {
+      await this._createBuilder().enrichSceneWithMap(
+        scene.sceneName,
+        imageUrl,
+        mode,
+        this._indexingCallOptions(),
+        (line) => this._addEnrichmentLogLine(line),
+      );
+      this._enrichmentSelectedImageUrl = '';
+      this._enrichmentRunner.sceneComplete();
+    } catch (err) {
+      this._enrichmentRunner.sceneFailed((err as Error).message);
+    }
+
+    this.render({ force: true });
+  }
+
+  private _addEnrichmentLogLine(line: string): void {
+    this._enrichmentRunner.addLogLine(line);
+    const logEl = this.element?.querySelector<HTMLElement>('#enrichment-log');
     if (logEl) {
       const div = document.createElement('div');
       div.textContent = line;
