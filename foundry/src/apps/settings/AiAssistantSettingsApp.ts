@@ -1,10 +1,4 @@
-import {
-  DEFAULTS,
-  NAMESPACE,
-  SETTINGS,
-  MODULE_FOLDER_NAME,
-  LORE_INDEX_JOURNAL_NAME,
-} from '../../definitions.js';
+import { DEFAULTS, NAMESPACE, SETTINGS } from '../../definitions.js';
 import { LoreIndexWizard } from '../LoreIndexWizard.js';
 
 interface AiAssistantContext {
@@ -20,11 +14,8 @@ interface AiAssistantContext {
   installedLocalModels: string[];
   localAiReachable: boolean;
   sessionHistoryMessages: number;
-  adventureJournalFolder: string;
-  journalFolders: string[];
   defaultClaudeModel: string;
   defaultLocalAiUrl: string;
-  hasAnyLoreIndex: boolean;
 }
 
 export class AiAssistantSettingsApp extends (foundry.applications.api.HandlebarsApplicationMixin(
@@ -109,28 +100,9 @@ export class AiAssistantSettingsApp extends (foundry.applications.api.Handlebars
         NAMESPACE,
         SETTINGS.SESSION_HISTORY_MESSAGES,
       ) as number,
-      adventureJournalFolder: game.settings.get(
-        NAMESPACE,
-        SETTINGS.ADVENTURE_JOURNAL_FOLDER,
-      ) as string,
-      journalFolders: (
-        (game.folders as any)?.filter((f: any) => f.type === 'JournalEntry' && !f.folder) ?? []
-      ).map((f: any) => f.name as string),
       defaultClaudeModel: DEFAULTS.CLAUDE_MODEL,
       defaultLocalAiUrl: DEFAULTS.LOCAL_AI_URL,
-      hasAnyLoreIndex: this._hasAnyLoreIndex(),
     };
-  }
-
-  private _hasAnyLoreIndex(): boolean {
-    const modFolder = (game.folders as any)?.find(
-      (f: any) => f.name === MODULE_FOLDER_NAME && f.type === 'JournalEntry',
-    );
-    if (!modFolder) return false;
-    const indexJournal = (game.journal as any)?.find(
-      (j: any) => j.folder?.id === modFolder.id && j.name === LORE_INDEX_JOURNAL_NAME,
-    );
-    return !!indexJournal?.pages.size;
   }
 
   static async _onSave(this: AiAssistantSettingsApp): Promise<void> {
@@ -154,9 +126,6 @@ export class AiAssistantSettingsApp extends (foundry.applications.api.Handlebars
       (this.element.querySelector('#ai-context-size') as HTMLInputElement).value,
       10,
     );
-    const adventureJournalFolder = (
-      this.element.querySelector('#ai-adventure-folder') as HTMLSelectElement
-    ).value;
     await game.settings.set(NAMESPACE, SETTINGS.AI_ASSISTANT_ENABLED, enabled);
     await game.settings.set(NAMESPACE, SETTINGS.AI_PROVIDER, aiProvider);
     await game.settings.set(NAMESPACE, SETTINGS.CLAUDE_API_KEY, claudeApiKey);
@@ -168,8 +137,6 @@ export class AiAssistantSettingsApp extends (foundry.applications.api.Handlebars
       SETTINGS.SESSION_HISTORY_MESSAGES,
       isNaN(sessionHistoryMessages) ? DEFAULTS.SESSION_HISTORY_MESSAGES : sessionHistoryMessages,
     );
-    await game.settings.set(NAMESPACE, SETTINGS.ADVENTURE_JOURNAL_FOLDER, adventureJournalFolder);
-
     ui.notifications.info('✓ Settings saved.');
   }
 

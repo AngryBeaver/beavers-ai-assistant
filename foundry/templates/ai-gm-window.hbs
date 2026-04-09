@@ -1,15 +1,29 @@
 <div class="beavers-ai-gm-window">
-  {{#unless loreIndexExists}}
-    <div style="padding:.5rem .75rem;background:var(--color-level-warning-bg,#fff3cd);
-                border:1px solid var(--color-level-warning,#e6ac00);border-radius:4px;
-                font-size:.875em">
-      <i class="fas fa-triangle-exclamation"></i>
-      <strong><a href="#" data-action="openSettings">Build Lore Index</a> for better context.</strong>
-    </div>
-  {{/unless}}
+
+  {{!-- Chapter selector (Task 1.5) --}}
+  {{#if loreIndexExists}}
+  <div class="beavers-ai-chapter-row">
+    <label for="ai-chapter-select">Chapter</label>
+    <select id="ai-chapter-select">
+      {{#each availableChapters}}
+        <option value="{{this}}" {{#if (eq this ../selectedChapter)}}selected{{/if}}>{{this}}</option>
+      {{/each}}
+    </select>
+  </div>
+  {{else}}
+  <div style="padding:.5rem .75rem;background:var(--color-level-warning-bg,#fff3cd);
+              border:1px solid var(--color-level-warning,#e6ac00);border-radius:4px;
+              font-size:.875em;margin-bottom:.5rem">
+    <i class="fas fa-triangle-exclamation"></i>
+    <strong><a href="#" data-action="openSettings">Build Lore Index</a> for better context.</strong>
+  </div>
+  {{/if}}
+
+  {{!-- Idle: Interact button --}}
+  {{#if (eq phase "idle")}}
   <div class="beavers-ai-controls">
     {{#if voiceTranscriptEnabled}}
-      <button type="button" data-action="interact">
+      <button type="button" data-action="interact" {{#unless loreIndexExists}}disabled{{/unless}}>
         <i class="fas fa-comments"></i> Interact
       </button>
     {{else}}
@@ -20,7 +34,75 @@
       </p>
     {{/if}}
   </div>
-  <div class="beavers-ai-response">
-    {{! response area — populated in later steps }}
+  {{/if}}
+
+  {{!-- Assessing spinner --}}
+  {{#if (eq phase "assessing")}}
+  <div class="beavers-ai-status">
+    <i class="fas fa-spinner fa-spin"></i> Assessing situation&hellip;
   </div>
+  <div class="beavers-ai-controls">
+    <button type="button" data-action="stop">
+      <i class="fas fa-stop"></i> Stop
+    </button>
+  </div>
+  {{/if}}
+
+  {{!-- Confirmation card (Task 1.6 Call 1 result) --}}
+  {{#if (eq phase "confirming")}}
+  {{#if assessment}}
+  <div class="beavers-ai-assessment">
+    <p class="beavers-ai-recap">{{assessment.recap}}</p>
+    <div class="beavers-ai-scene-row">
+      <label>Scene</label>
+      <input id="ai-confirmed-scene" type="text" value="{{assessment.currentScene}}">
+      <span class="beavers-ai-confidence beavers-ai-confidence--{{assessment.confidence}}">{{assessment.confidence}}</span>
+    </div>
+    <div class="beavers-ai-candidates">
+      {{#each assessment.npcCandidates}}
+      <div class="beavers-ai-candidate">
+        <div class="beavers-ai-candidate-info">
+          <strong>{{npc}}</strong>
+          <span>{{topic}}</span>
+        </div>
+        <button type="button" data-action="confirmNpc" data-npc="{{npc}}" data-topic="{{topic}}">
+          Confirm <i class="fas fa-arrow-right"></i>
+        </button>
+      </div>
+      {{/each}}
+    </div>
+  </div>
+  {{/if}}
+  {{/if}}
+
+  {{!-- Responding: streaming persona response (Task 1.6 Call 2) --}}
+  {{#if (eq phase "responding")}}
+  <div class="beavers-ai-response-header">
+    <strong>{{confirmedNpc}}</strong>
+    <i class="fas fa-spinner fa-spin" style="opacity:.6"></i>
+  </div>
+  <div class="beavers-ai-response"></div>
+  <div class="beavers-ai-controls">
+    <button type="button" data-action="stop">
+      <i class="fas fa-stop"></i> Stop
+    </button>
+  </div>
+  {{/if}}
+
+  {{!-- Done: final response + actions --}}
+  {{#if (eq phase "done")}}
+  <div class="beavers-ai-response-header">
+    <strong>{{confirmedNpc}}</strong>
+  </div>
+  <div class="beavers-ai-response">{{response}}</div>
+  <div class="beavers-ai-controls">
+    <button type="button" data-action="retry">
+      <i class="fas fa-rotate"></i> Retry
+    </button>
+    <button type="button" data-action="accept">
+      <i class="fas fa-check"></i> Accept
+    </button>
+  </div>
+  {{/if}}
+
 </div>

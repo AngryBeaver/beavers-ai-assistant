@@ -8,7 +8,7 @@ import { AiService, CallOptions } from '../services/AiService.js';
 import { GameData } from './ContextBuilder.js';
 import { JournalApi } from './JournalApi.js';
 import { ChapterCandidate } from './ChapterDetector.js';
-import { stripHtml, escapeHtml, unescapeHtml, parseIndexOutput } from './loreIndexUtils.js';
+import { stripHtml, escapeHtml, unescapeHtml } from './loreIndexUtils.js';
 import type { EnrichmentScene, NamedImage } from './EnrichmentPassRunner.js';
 
 /**
@@ -78,8 +78,9 @@ export class LoreIndexBuilder {
   }
 
   /**
-   * Index a single chapter: calls AI, parses sentinel-delimited output, and
-   * writes `Chapter: <name>` + `Scene: <name>` pages to the lore-index journal.
+   * Index a single chapter: streams AI output, parses sentinel-delimited blocks,
+   * and writes `Chapter: <name>` + `Scene: <name>` pages incrementally as each
+   * block closes.
    *
    * @param chapter     The chapter candidate to index.
    * @param callOptions Model / token options passed to the AI service.
@@ -101,28 +102,122 @@ export class LoreIndexBuilder {
     const systemPrompt = `You are a lore indexer for a tabletop RPG adventure.
 You will receive the raw content of one adventure chapter and produce a structured index.
 
-Use EXACTLY these sentinel delimiters — each on its own line — to separate sections:
+Use EXACTLY these sentinel delimiters — each on its own line:
 ---CHAPTER: <chapter name>---
-<neutral arc summary: what this chapter covers, all scenes listed, stakes, themes — ~200 words>
+<chapter content — four sections, see below>
 ---SCENE: <scene name>---
-<full scene detail: sublocations as a flat list, NPCs present with brief descriptions, what happens — ~300 words>
+<scene content — see below>
+
+CHAPTER block must contain exactly these four sections in order:
+
+## Overview
+What this chapter is about — arc, theme, central tension. 2–4 sentences.
+
+## Scenes
+- **Scene: <name>** — one sentence: what happens and why it matters to the arc.
+(one bullet per scene, in play order)
+
+## Narrative Flow
+How scenes connect. Which are optional. What gates what. Short prose or brief list.
+
+## NPCs
+| NPC | Role in chapter | New information revealed here |
+|---|---|---|
+| ... | ... | ... |
+(only NPCs who appear in this chapter; record what is NEW here, not full biography)
+
+SCENE block format:
+Brief summary — what is at stake, who is involved.
+
+NPCs: <NPC name> (area <id> if applicable), ...
+
+#### Areas
+**<id>. <Area Name>** — One sentence: what is here, who is present.
+(one line per area; if source has no explicit identifiers, write flat prose instead)
 
 Rules:
-- Include ALL scenes you can identify.
-- Write neutrally — no visited/unvisited framing.
-- Do not invent scenes, NPCs, or locations not present in the source.
-- Output exactly one ---CHAPTER: ...--- block, then one ---SCENE: ...--- block per scene.`;
+- Include ALL scenes you can identify. Write neutrally — no visited/unvisited framing.
+- Preserve all area identifiers exactly as they appear in the source (1., 2a., A., B., etc.) — never renumber or strip them.
+- Do not invent scenes, NPCs, or locations not in the source.
+- Output exactly one ---CHAPTER: ...--- block followed by one ---SCENE: ...--- block per scene.`;
 
     const userPrompt = `Index this chapter:\n\n${content}\n\nBegin with ---CHAPTER: ${chapter.name}---`;
 
     onProgress(`→ Sending to AI…`);
 
-    const { content: raw } = await this.#aiService.call(systemPrompt, userPrompt, {
-      ...callOptions,
-      max_tokens: 32768,
-    });
+    // Stream the response, writing pages incrementally as each block closes.
+    // onChunk is synchronous, so page writes are queued as a sequential promise chain.
+    let writeChain: Promise<void> = Promise.resolve();
+    let buffer = '';
+    type Block = { type: 'CHAPTER' | 'SCENE'; name: string };
+    let currentBlock: Block | null = null;
+    let currentLines: string[] = [];
+    let sceneCount = 0;
+    let chapterSummary = '';
 
-    return this._writeChapterPages(chapter.name, raw, onProgress);
+    const flushBlock = (block: Block, lines: string[]): void => {
+      const text = lines.join('\n').trim();
+      if (block.type === 'SCENE') {
+        const name = block.name;
+        writeChain = writeChain.then(async () => {
+          await JournalApi.writeJournalPage(LORE_INDEX_JOURNAL_NAME, {
+            name: `Scene: ${name}`,
+            type: 'text',
+            text: { content: `<div>${escapeHtml(text)}</div>`, format: 1 },
+          });
+          onProgress(`  ✓ Scene: ${name}`);
+          sceneCount++;
+        });
+      } else if (block.type === 'CHAPTER') {
+        chapterSummary = text;
+      }
+    };
+
+    await this.#aiService.stream(
+      systemPrompt,
+      userPrompt,
+      (chunk, type) => {
+        if (type !== 'content') return;
+        buffer += chunk;
+        const lines = buffer.split('\n');
+        buffer = lines.pop() ?? '';
+        for (const line of lines) {
+          const chm = line.match(/^---CHAPTER:\s*([^-]+?)\s*---\s*$/);
+          const scm = line.match(/^---SCENE:\s*([^-]+?)\s*---\s*$/);
+          if (chm) {
+            if (currentBlock) flushBlock(currentBlock, currentLines);
+            currentBlock = { type: 'CHAPTER', name: chm[1] };
+            currentLines = [];
+          } else if (scm) {
+            if (currentBlock) flushBlock(currentBlock, currentLines);
+            currentBlock = { type: 'SCENE', name: scm[1] };
+            currentLines = [];
+          } else if (currentBlock) {
+            currentLines.push(line);
+          }
+        }
+      },
+      { ...callOptions, max_tokens: 32768 },
+    );
+
+    // Flush remaining buffer + final block
+    if (buffer && currentBlock) currentLines.push(buffer);
+    if (currentBlock) flushBlock(currentBlock, currentLines);
+
+    // Wait for all scene page writes to complete
+    await writeChain;
+
+    // Write chapter summary page last (after all scenes)
+    if (chapterSummary) {
+      await JournalApi.writeJournalPage(LORE_INDEX_JOURNAL_NAME, {
+        name: `Chapter: ${chapter.name}`,
+        type: 'text',
+        text: { content: `<div>${escapeHtml(chapterSummary)}</div>`, format: 1 },
+      });
+      onProgress(`  ✓ Chapter summary written.`);
+    }
+
+    return sceneCount;
   }
 
   /**
@@ -135,11 +230,26 @@ Rules:
     const chapterSummaries = this._readChapterSummaries();
 
     const systemPrompt = `You are a lore indexer for a tabletop RPG adventure.
-Produce a concise Overview page containing:
-- Global NPCs (name + one-line description, no chapter-level duplicates)
-- Factions (name + one-line description)
-- World context (1–2 paragraphs: setting, tone, background)
-Write neutrally — no visited/unvisited framing. Keep it under 500 words.`;
+Produce the Overview page using EXACTLY this structure:
+
+## World Context
+Brief setting introduction — geography, factions at play, the adventure's central conflict. 1–2 paragraphs.
+
+## Factions
+| Faction | Goal | Key figure |
+|---|---|---|
+| ... | ... | ... |
+
+## NPC Index
+| NPC | Brief description | Appears in |
+|---|---|---|
+| ... | ... | Chapter 1, Chapter 3 (use the chapter names exactly as they appear) |
+
+Rules:
+- Write neutrally — no visited/unvisited framing.
+- The NPC Index is a master index only — do not duplicate detail that lives in chapter pages.
+- "Appears in" lists which chapters the NPC features in.
+- Keep the whole page under 1000 words.`;
 
     const parts = [
       overviewSource ? `## Background Source\n${overviewSource}` : '',
@@ -175,35 +285,6 @@ Write neutrally — no visited/unvisited framing. Keep it under 500 words.`;
         pages: [],
       });
     }
-  }
-
-  private async _writeChapterPages(
-    chapterName: string,
-    raw: string,
-    onProgress: (line: string) => void,
-  ): Promise<number> {
-    const { chapterSummary, scenes } = parseIndexOutput(raw);
-
-    // Write scenes first (matches expected log order)
-    let sceneCount = 0;
-    for (const [sceneName, sceneContent] of scenes) {
-      await JournalApi.writeJournalPage(LORE_INDEX_JOURNAL_NAME, {
-        name: `Scene: ${sceneName}`,
-        type: 'text',
-        text: { content: `<div>${escapeHtml(sceneContent)}</div>`, format: 1 },
-      });
-      onProgress(`  ✓ Scene: ${sceneName}`);
-      sceneCount++;
-    }
-
-    await JournalApi.writeJournalPage(LORE_INDEX_JOURNAL_NAME, {
-      name: `Chapter: ${chapterName}`,
-      type: 'text',
-      text: { content: `<div>${escapeHtml(chapterSummary)}</div>`, format: 1 },
-    });
-    onProgress(`  ✓ Chapter summary written.`);
-
-    return sceneCount;
   }
 
   private _readChapterSummaries(): string[] {
@@ -624,8 +705,8 @@ Symmetric connections are written once. Write nothing else — no prose, no head
 You will receive raw adventure journal content and produce a hierarchical, structured index.
 
 The index should be organized as:
-- Adventure parts (e.g., "## Part 1: The Arrival")
-  - Scene summaries under each part (e.g., "### Scene 1: The Road to Millhaven")
+- Adventure Chapters (e.g., "## Chapter 1: The Arrival")
+  - Scene summaries under each Chapter (e.g., "### Scene 1: The Road to Millhaven")
     - Summary (what happens in this scene)
     - Parts (Some Scenes are big and have multiple parts e.g. sublocations/rooms short summary of each of those if any)
     - NPCs Present (list with brief descriptions)
@@ -637,7 +718,7 @@ The index should be organized as:
   - All Factions (consolidated list)
 
 Structure the index ONLY from the provided content. Do NOT invent new scenes, NPCs, or locations.
-Keep descriptions concise (1 line per entry in lists).`;
+Keep descriptions concise (1-3 line per entry in lists).`;
 
     const userPrompt = `Build a hierarchical lore index from this adventure content:
 

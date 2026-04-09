@@ -51,12 +51,26 @@
   {{#if indexing.isRunning}}
   <div id="indexing-log"
        style="font-family:monospace;font-size:.85em;padding:.5rem .75rem;
-              background:rgba(0,0,0,0.1);color:#111;
-              border:1px solid var(--color-border-light-primary,#ccc);
+              background:rgba(0,0,0,0.9);color:#ccc;
+              border:1px solid var(#ccc);
               border-radius:4px;min-height:4rem;max-height:12rem;overflow-y:auto">
     {{#each indexing.log}}
     <div>{{this}}</div>
     {{/each}}
+  </div>
+  <div class="lw-nav" style="margin-top:.5rem">
+    <button type="button" data-action="cancelIndexing">
+      <i class="fas fa-stop"></i> Cancel
+    </button>
+  </div>
+  {{/if}}
+
+  {{!-- OVERVIEW: cancel button while running --}}
+  {{#if indexing.isOverview}}
+  <div class="lw-nav" style="margin-top:.5rem">
+    <button type="button" data-action="cancelIndexing">
+      <i class="fas fa-stop"></i> Cancel
+    </button>
   </div>
   {{/if}}
 

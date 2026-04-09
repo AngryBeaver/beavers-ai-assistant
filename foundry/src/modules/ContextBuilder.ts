@@ -7,6 +7,7 @@ import {
   SESSION_FOLDER_NAME,
   SUMMARY_JOURNAL_NAME,
 } from '../definitions.js';
+import { stripHtml } from './loreIndexUtils.js';
 
 const LORE_CHAR_BUDGET = 4000 * 4; // ~4 000 tokens
 
@@ -67,7 +68,7 @@ export class ContextBuilder {
     this.#game = gameData;
   }
 
-  async build(): Promise<string> {
+  async build(selectedChapter?: string, selectedScene?: string): Promise<string> {
     const historyLimit =
       (this.#game.settings.get(NAMESPACE, SETTINGS.SESSION_HISTORY_MESSAGES) as number) ||
       DEFAULTS.SESSION_HISTORY_MESSAGES;
@@ -77,7 +78,7 @@ export class ContextBuilder {
     const [chatEntries, summaryContent, loreContent] = await Promise.all([
       this._readSessionChat(MODULE_FOLDER_NAME, SESSION_FOLDER_NAME),
       this._readSessionSummary(MODULE_FOLDER_NAME, SESSION_FOLDER_NAME),
-      this._readLore(adventureFolder, MODULE_FOLDER_NAME, LORE_INDEX_JOURNAL_NAME),
+      this._readLore(adventureFolder, MODULE_FOLDER_NAME, LORE_INDEX_JOURNAL_NAME, selectedChapter, selectedScene),
     ]);
 
     const scene = this.#game.scenes?.active ?? null;
@@ -242,7 +243,25 @@ export class ContextBuilder {
     adventureFolder: string,
     moduleFolder: string,
     indexJournalName: string,
+    selectedChapter?: string,
+    selectedScene?: string,
   ): Promise<string | null> {
+    // Try three-tier index first
+    const modFolder = this.#game.folders?.find(
+      (f) => f.name === moduleFolder && f.type === 'JournalEntry',
+    );
+    const indexJournal = modFolder
+      ? this.#game.journal?.find(
+          (j) => j.folder?.id === modFolder.id && j.name === indexJournalName,
+        )
+      : undefined;
+
+    if (indexJournal) {
+      const indexed = this._readThreeTierIndex(indexJournal, selectedChapter, selectedScene);
+      if (indexed) return indexed;
+    }
+
+    // Fallback: keyword-scored raw pages from adventure folder
     if (!adventureFolder) return null;
 
     const advFolder = this.#game.folders?.find(
@@ -250,24 +269,6 @@ export class ContextBuilder {
     );
     if (!advFolder) return null;
 
-    const folder = this.#game.folders?.find(
-      (f) => f.name === moduleFolder && f.type === 'JournalEntry',
-    );
-    if (!folder) return null;
-
-    // Prefer pre-built lore index
-    const indexJournal = this.#game.journal?.find(
-      (j) => j.folder?.id === folder.id && j.name === indexJournalName,
-    );
-    if (indexJournal) {
-      const text = indexJournal.pages.contents
-        .map((p) => stripHtml(p.text?.content ?? ''))
-        .join('\n')
-        .trim();
-      if (text) return text;
-    }
-
-    // Fallback: keyword-scored raw pages from adventure folder
     const journals = this.#game.journal?.filter((j) => j.folder?.id === advFolder.id) ?? [];
     const allPages: Array<{ name: string; content: string }> = [];
     for (const j of journals) {
@@ -291,19 +292,46 @@ export class ContextBuilder {
     }
     return result.trim() || null;
   }
+
+  /**
+   * Load lore pages from the three-tier index based on GM selection state:
+   * - Chapter + Scene → Overview + Chapter:<name> + Scene:<name>
+   * - Chapter only   → Overview + Chapter:<name>
+   * - Nothing        → Overview only
+   * - No Overview    → null (index not built yet, use fallback)
+   */
+  private _readThreeTierIndex(
+    journal: JournalData,
+    selectedChapter?: string,
+    selectedScene?: string,
+  ): string | null {
+    const pages = journal.pages.contents;
+
+    const overviewPage = pages.find((p) => p.name === 'Overview');
+    if (!overviewPage) return null;
+
+    const overviewText = stripHtml(overviewPage.text?.content ?? '').trim();
+    if (!overviewText) return null;
+
+    const parts: string[] = [`## Overview\n${overviewText}`];
+
+    if (selectedChapter) {
+      const chapterPage = pages.find((p) => p.name === `Chapter: ${selectedChapter}`);
+      if (chapterPage) {
+        const text = stripHtml(chapterPage.text?.content ?? '').trim();
+        if (text) parts.push(`## Chapter: ${selectedChapter}\n${text}`);
+      }
+
+      if (selectedScene) {
+        const scenePage = pages.find((p) => p.name === `Scene: ${selectedScene}`);
+        if (scenePage) {
+          const text = stripHtml(scenePage.text?.content ?? '').trim();
+          if (text) parts.push(`## Scene: ${selectedScene}\n${text}`);
+        }
+      }
+    }
+
+    return parts.join('\n\n---\n\n');
+  }
 }
 
-// ---------------------------------------------------------------------------
-
-function stripHtml(html: string): string {
-  return html
-    .replace(/<h1[^>]*>(.*?)<\/h1>/gi, '\n### $1\n')
-    .replace(/<h2[^>]*>(.*?)<\/h2>/gi, '\n#### $1\n')
-    .replace(/<h3[^>]*>(.*?)<\/h3>/gi, '\n##### $1\n')
-    .replace(/<h4[^>]*>(.*?)<\/h4>/gi, '\n###### $1\n')
-    .replace(/<h5[^>]*>(.*?)<\/h5>/gi, '\n####### $1\n')
-    .replace(/<[^>]*>/g, ' ')
-    .replace(/[^\S\n]+/g, ' ')
-    .replace(/\n{3,}/g, '\n\n')
-    .trim();
-}

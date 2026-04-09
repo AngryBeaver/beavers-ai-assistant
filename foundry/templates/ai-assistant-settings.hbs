@@ -132,31 +132,10 @@
   <fieldset style="margin:5px 0px;">
     <legend>Adventure</legend>
     <div class="form-group">
-      <label>Adventure Journal Folder:</label>
       <div class="form-fields">
-        <select id="ai-adventure-folder" name="adventureJournalFolder" data-dtype="String" style="width:100%">
-          <option value="">(none)</option>
-          {{#each journalFolders}}
-            <option value="{{this}}" {{#if (eq ../adventureJournalFolder this)}}selected{{/if}}>{{this}}</option>
-          {{/each}}
-        </select>
-      </div>
-      <p class="notes hint">Top-level journal folder containing your adventure/lore journals.</p>
-    </div>
-    <div class="form-group">
-      <div class="form-fields" style="display:flex;gap:.5rem">
-        {{#if hasAnyLoreIndex}}
-        <button type="button" data-action="openLoreWizard" style="flex:1">
-          <i class="fas fa-rotate"></i> Rebuild chapters
-        </button>
-        <button type="button" data-action="openLoreWizard" style="flex:1">
-          <i class="fas fa-map"></i> Update map enrichments
-        </button>
-        {{else}}
-        <button type="button" data-action="openLoreWizard" style="flex:1">
+        <button type="button" data-action="openLoreWizard" style="width:100%">
           <i class="fas fa-wand-magic-sparkles"></i> Build Lore Index
         </button>
-        {{/if}}
       </div>
     </div>
   </fieldset>

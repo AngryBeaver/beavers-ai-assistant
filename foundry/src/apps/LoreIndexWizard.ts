@@ -86,6 +86,7 @@ export class LoreIndexWizard extends foundry.applications.api.HandlebarsApplicat
       refreshModels: LoreIndexWizard._onRefreshModels,
       startIndexing: LoreIndexWizard._onStartIndexing,
       // Indexing pass
+      cancelIndexing: LoreIndexWizard._onCancelIndexing,
       indexThisChapter: LoreIndexWizard._onIndexThisChapter,
       rebuildChapter: LoreIndexWizard._onRebuildChapter,
       skipThisChapter: LoreIndexWizard._onSkipThisChapter,
@@ -142,6 +143,9 @@ export class LoreIndexWizard extends foundry.applications.api.HandlebarsApplicat
   private _enrichmentSelectedImageUrl = '';
   private _enrichmentEntryPoint: 'indexing' | 'location' = 'indexing';
   private _estimatedEnrichmentScenes = 0;
+
+  // Active AI call abort controller
+  private _abortController: AbortController | null = null;
 
   private readonly _detector = new ChapterDetector(makeFoundryGameAccessor());
 
@@ -206,8 +210,7 @@ export class LoreIndexWizard extends foundry.applications.api.HandlebarsApplicat
         return;
       }
 
-      const type = (opt.dataset.type ?? 'folder') as 'folder' | 'journal';
-      const hasIndex = this._detectIndexStatusFor(opt.value, type) === 'exists';
+      const hasIndex = this._detectIndexStatusFor() === 'exists';
 
       if (badge) {
         badge.innerHTML = hasIndex
@@ -372,7 +375,7 @@ export class LoreIndexWizard extends foundry.applications.api.HandlebarsApplicat
       modelFetchError: this._modelFetchError,
       estimatedInputTokensFormatted: inputTokens.toLocaleString(),
       estimatedOutputTokensFormatted: outputTokens.toLocaleString(),
-      claudeCostEstimate: this._claudeCostFromTokens(inputTokens, outputTokens),
+      claudeCostEstimate: this._claudeCostEstimate(inputTokens, outputTokens),
       estimatedEnrichmentScenes: this._estimatedEnrichmentScenes,
       visionImageTokensPerScene: LoreIndexWizard._VISION_IMAGE_TOKENS,
       visionTextTokensPerScene: LoreIndexWizard._VISION_TEXT_TOKENS,
@@ -479,7 +482,7 @@ export class LoreIndexWizard extends foundry.applications.api.HandlebarsApplicat
     return [...folders, ...journals];
   }
 
-  private _detectIndexStatusFor(id: string, type: 'folder' | 'journal'): IndexStatus {
+  private _detectIndexStatusFor(): IndexStatus {
     const modFolder = (game.folders as any)?.find(
       (f: any) => f.name === MODULE_FOLDER_NAME && f.type === 'JournalEntry',
     );
@@ -488,11 +491,6 @@ export class LoreIndexWizard extends foundry.applications.api.HandlebarsApplicat
       (j: any) => j.folder?.id === modFolder.id && j.name === LORE_INDEX_JOURNAL_NAME,
     );
     if (!indexJournal?.pages.size) return 'none';
-    const prefix =
-      type === 'folder'
-        ? (game.folders as any)?.get(id)?.name
-        : (game.journal as any)?.get(id)?.name;
-    if (!prefix) return 'none';
     const hasPage = [...indexJournal.pages.values()].some(
       (p: any) => p.name?.startsWith('Chapter:') || p.name === 'Overview',
     );
@@ -515,13 +513,6 @@ export class LoreIndexWizard extends foundry.applications.api.HandlebarsApplicat
   private _estimateOutputTokens(): number {
     return this._chapters.filter((c) => c.role !== 'skip').length * 4096;
   }
-
-  private _claudeCostFromTokens(inputTokens: number, outputTokens: number): string {
-    if (inputTokens === 0) return '—';
-    const cost = (inputTokens / 1_000_000) * 3 + (outputTokens / 1_000_000) * 15;
-    return cost < 0.01 ? '< $0.01' : `~$${cost.toFixed(2)}`;
-  }
-
   // Image: ~12 tiles × 1,601 tokens (large map ~2000×1500 resized to 1568×1176)
   // Scene text: full lore-index scene page, typically ~1,500 tokens
   // Output: max_tokens cap on connections block
@@ -529,20 +520,23 @@ export class LoreIndexWizard extends foundry.applications.api.HandlebarsApplicat
   private static readonly _VISION_TEXT_TOKENS = 1_500;
   private static readonly _VISION_OUTPUT_TOKENS = 1_024;
 
+  private _claudeCostEstimate(inputTokens: number, outputTokens: number): string {
+    return AiService.get('claude').estimateCost(inputTokens, outputTokens);
+  }
+
   private _claudeVisionCostPerScene(): string {
-    const input = LoreIndexWizard._VISION_IMAGE_TOKENS + LoreIndexWizard._VISION_TEXT_TOKENS;
-    const output = LoreIndexWizard._VISION_OUTPUT_TOKENS;
-    const cost = (input / 1_000_000) * 3 + (output / 1_000_000) * 15;
-    return cost < 0.01 ? '< $0.01' : `~$${cost.toFixed(3)}`;
+    return AiService.get('claude').estimateCost(
+      LoreIndexWizard._VISION_IMAGE_TOKENS + LoreIndexWizard._VISION_TEXT_TOKENS,
+      LoreIndexWizard._VISION_OUTPUT_TOKENS,
+    );
   }
 
   private _claudeVisionCostEstimate(sceneCount: number): string {
     if (sceneCount === 0) return '—';
-    const input =
-      sceneCount * (LoreIndexWizard._VISION_IMAGE_TOKENS + LoreIndexWizard._VISION_TEXT_TOKENS);
-    const output = sceneCount * LoreIndexWizard._VISION_OUTPUT_TOKENS;
-    const cost = (input / 1_000_000) * 3 + (output / 1_000_000) * 15;
-    return cost < 0.01 ? '< $0.01' : `~$${cost.toFixed(2)}`;
+    return AiService.get('claude').estimateCost(
+      sceneCount * (LoreIndexWizard._VISION_IMAGE_TOKENS + LoreIndexWizard._VISION_TEXT_TOKENS),
+      sceneCount * LoreIndexWizard._VISION_OUTPUT_TOKENS,
+    );
   }
 
   // ---------------------------------------------------------------------------
@@ -596,10 +590,7 @@ export class LoreIndexWizard extends foundry.applications.api.HandlebarsApplicat
   private async _fetchModels(): Promise<void> {
     this._modelFetchError = false;
     try {
-      const res = await fetch(`${this._localAiUrl()}/v1/models`);
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = (await res.json()) as { data: { id: string }[] };
-      this._availableModels = data.data.map((m) => m.id).sort();
+      this._availableModels = await AiService.get(this._selectedProvider).fetchModels();
       if (this._selectedModel && !this._availableModels.includes(this._selectedModel)) {
         this._selectedModel = '';
       }
@@ -630,7 +621,7 @@ export class LoreIndexWizard extends foundry.applications.api.HandlebarsApplicat
       type,
       name: this._resolveLocationName(opt.value, type),
     };
-    this._indexStatus = this._detectIndexStatusFor(opt.value, type);
+    this._indexStatus = this._detectIndexStatusFor();
     this._runChapterDetection();
   }
 
@@ -732,6 +723,10 @@ export class LoreIndexWizard extends foundry.applications.api.HandlebarsApplicat
   static async _onSkipNextChapter(this: LoreIndexWizard): Promise<void> {
     this._runner.skipNext();
     this.render({ force: true });
+  }
+
+  static _onCancelIndexing(this: LoreIndexWizard): void {
+    this._abortController?.abort();
   }
 
   static async _onStopIndexing(this: LoreIndexWizard): Promise<void> {
@@ -849,6 +844,9 @@ export class LoreIndexWizard extends foundry.applications.api.HandlebarsApplicat
     if (this._selectedProvider === 'local-ai' && this._selectedModel) {
       opts.model = this._selectedModel;
     }
+    if (this._abortController) {
+      opts.signal = this._abortController.signal;
+    }
     return opts;
   }
 
@@ -856,6 +854,7 @@ export class LoreIndexWizard extends foundry.applications.api.HandlebarsApplicat
     const chapter = this._runner.currentChapter;
     if (!chapter) return;
 
+    this._abortController = new AbortController();
     this._runner.beginRun();
     this.render({ force: true });
 
@@ -867,13 +866,21 @@ export class LoreIndexWizard extends foundry.applications.api.HandlebarsApplicat
       );
       this._runner.chapterComplete(sceneCount);
     } catch (err) {
-      this._runner.chapterFailed((err as Error).message);
+      if ((err as DOMException).name === 'AbortError') {
+        this._runner.stopEarly();
+      } else {
+        this._runner.chapterFailed((err as Error).message);
+      }
+    } finally {
+      this._abortController = null;
     }
 
     this.render({ force: true });
   }
 
   private async _runIndexingOverview(): Promise<void> {
+    this._abortController = new AbortController();
+
     try {
       const builder = this._createBuilder();
       const overviewContent = this._runner.overviewChapter
@@ -882,7 +889,13 @@ export class LoreIndexWizard extends foundry.applications.api.HandlebarsApplicat
       await builder.indexOverview(overviewContent, this._indexingCallOptions());
       this._runner.overviewComplete();
     } catch (err) {
-      this._runner.overviewFailed((err as Error).message);
+      if ((err as DOMException).name === 'AbortError') {
+        this._runner.stopEarly();
+      } else {
+        this._runner.overviewFailed((err as Error).message);
+      }
+    } finally {
+      this._abortController = null;
     }
 
     this.render({ force: true });
@@ -910,6 +923,7 @@ export class LoreIndexWizard extends foundry.applications.api.HandlebarsApplicat
       return;
     }
 
+    this._abortController = new AbortController();
     this._enrichmentRunner.beginRun();
     this.render({ force: true });
 
@@ -924,7 +938,13 @@ export class LoreIndexWizard extends foundry.applications.api.HandlebarsApplicat
       this._enrichmentSelectedImageUrl = '';
       this._enrichmentRunner.sceneComplete();
     } catch (err) {
-      this._enrichmentRunner.sceneFailed((err as Error).message);
+      if ((err as DOMException).name === 'AbortError') {
+        this._enrichmentRunner.sceneFailed('Cancelled.');
+      } else {
+        this._enrichmentRunner.sceneFailed((err as Error).message);
+      }
+    } finally {
+      this._abortController = null;
     }
 
     this.render({ force: true });
