@@ -15,7 +15,7 @@
 
 services:
   whisper:
-    image: whisper-asr-webservice:latest
+    image: onerahmet/openai-whisper-asr-webservice:v1.7.1-gpu
     ports:
       - "9000:9000"
     environment:
