@@ -27,6 +27,7 @@ function mockStreamFetch(lines: string[]) {
       if (i < chunks.length) return Promise.resolve({ done: false, value: chunks[i++] });
       return Promise.resolve({ done: true, value: undefined });
     }),
+    releaseLock: vi.fn(),
   };
   return vi.fn().mockResolvedValue({
     ok: true,
