@@ -14,15 +14,8 @@ export const SUMMARY_JOURNAL_NAME = 'AI-Summary';
 /** Fixed journal name for the lore index inside MODULE_FOLDER_NAME. */
 export const LORE_INDEX_JOURNAL_NAME = 'lore-index';
 
-export const HOOKS = {
-  VOICE_TRANSCRIPT_ENABLED_CHANGED: `${NAMESPACE}.voiceTranscriptEnabledChanged`,
-} as const;
-
 export const SETTINGS = {
   AI_ASSISTANT_PASSWORD: 'aiAssistantPassword',
-
-  // Voice Transcript
-  VOICE_TRANSCRIPT_ENABLED: 'voiceTranscriptEnabled',
 
   // AI Assistant
   AI_ASSISTANT_ENABLED: 'aiAssistantEnabled',

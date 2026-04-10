@@ -1,4 +1,4 @@
-import { AI_ASSISTANT_USER_NAME, HOOKS, NAMESPACE, SETTINGS } from './definitions.js';
+import { AI_ASSISTANT_USER_NAME, NAMESPACE, SETTINGS } from './definitions.js';
 import { Settings as ApiSettings } from './apps/settings/Settings.js';
 import { AiGmWindow } from './apps/AiGmWindow.js';
 import { ChatBubbleApi } from './modules/ChatBubbleApi.js';
@@ -23,21 +23,9 @@ Hooks.once('init', async function () {
 
 Hooks.once('ready', async function () {
   console.log(`${NAMESPACE} | Ready`);
-  const vtEnabled = game.settings.get(NAMESPACE, SETTINGS.VOICE_TRANSCRIPT_ENABLED) as boolean;
-  if (vtEnabled && game.user.isGM) {
+  if (game.user.isGM) {
     await ensureAiAssistantUser();
     SocketApi.start();
-  }
-});
-
-// React to Voice Transcript being enabled or disabled at runtime (from settings app save).
-Hooks.on(HOOKS.VOICE_TRANSCRIPT_ENABLED_CHANGED, async (enabled: boolean) => {
-  if (!game.user.isGM) return;
-  if (enabled) {
-    await ensureAiAssistantUser();
-    SocketApi.start();
-  } else {
-    SocketApi.stop();
   }
 });
 

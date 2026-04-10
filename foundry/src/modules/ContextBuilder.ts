@@ -78,7 +78,13 @@ export class ContextBuilder {
     const [chatEntries, summaryContent, loreContent] = await Promise.all([
       this._readSessionChat(MODULE_FOLDER_NAME, SESSION_FOLDER_NAME),
       this._readSessionSummary(MODULE_FOLDER_NAME, SESSION_FOLDER_NAME),
-      this._readLore(adventureFolder, MODULE_FOLDER_NAME, LORE_INDEX_JOURNAL_NAME, selectedChapter, selectedScene),
+      this._readLore(
+        adventureFolder,
+        MODULE_FOLDER_NAME,
+        LORE_INDEX_JOURNAL_NAME,
+        selectedChapter,
+        selectedScene,
+      ),
     ]);
 
     const scene = this.#game.scenes?.active ?? null;
@@ -334,4 +340,3 @@ export class ContextBuilder {
     return parts.join('\n\n---\n\n');
   }
 }
-

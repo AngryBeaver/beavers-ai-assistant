@@ -109,16 +109,6 @@
 
   <fieldset style="margin:5px 0px;">
     <legend>Session</legend>
-    {{#unless voiceTranscriptEnabled}}
-    <div style="padding:.5rem .75rem;background:var(--color-level-warning-bg,#fff3cd);
-                border:1px solid var(--color-level-warning,#e6ac00);border-radius:4px;
-                font-size:.875em;margin-bottom:.75rem">
-      <i class="fas fa-triangle-exclamation"></i>
-      <strong>Voice Transcript is not enabled.</strong>
-      Session context requires Voice Transcript. The <em>Interact</em> button will not be
-      available in the AI GM Window until Voice Transcript is enabled.
-    </div>
-    {{/unless}}
     <div class="form-group">
       <label>Context Size:</label>
       <div class="form-fields">

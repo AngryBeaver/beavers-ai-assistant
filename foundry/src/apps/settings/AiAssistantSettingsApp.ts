@@ -3,7 +3,6 @@ import { LoreIndexWizard } from '../LoreIndexWizard.js';
 
 interface AiAssistantContext {
   enabled: boolean;
-  voiceTranscriptEnabled: boolean;
   aiProvider: string;
   isClaudeProvider: boolean;
   isLocalAiProvider: boolean;
@@ -83,10 +82,6 @@ export class AiAssistantSettingsApp extends (foundry.applications.api.Handlebars
 
     return {
       enabled: game.settings.get(NAMESPACE, SETTINGS.AI_ASSISTANT_ENABLED) as boolean,
-      voiceTranscriptEnabled: game.settings.get(
-        NAMESPACE,
-        SETTINGS.VOICE_TRANSCRIPT_ENABLED,
-      ) as boolean,
       aiProvider,
       isClaudeProvider: aiProvider === 'claude',
       isLocalAiProvider: aiProvider === 'local-ai',

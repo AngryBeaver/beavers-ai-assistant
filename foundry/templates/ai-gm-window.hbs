@@ -22,17 +22,9 @@
   {{!-- Idle: Interact button --}}
   {{#if (eq phase "idle")}}
   <div class="beavers-ai-controls">
-    {{#if voiceTranscriptEnabled}}
       <button type="button" data-action="interact" {{#unless loreIndexExists}}disabled{{/unless}}>
         <i class="fas fa-comments"></i> Interact
       </button>
-    {{else}}
-      <p class="beavers-ai-vt-notice">
-        <i class="fas fa-triangle-exclamation"></i>
-        Voice Transcript is not enabled &mdash; Interact requires a live session feed.
-        Configure Voice Transcript to enable.
-      </p>
-    {{/if}}
   </div>
   {{/if}}
 

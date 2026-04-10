@@ -14,7 +14,6 @@ interface SituationAssessment {
 type InteractPhase = 'idle' | 'assessing' | 'confirming' | 'responding' | 'done';
 
 interface AiGmWindowContext {
-  voiceTranscriptEnabled: boolean;
   loreIndexExists: boolean;
   availableChapters: string[];
   selectedChapter: string;
@@ -99,7 +98,6 @@ export class AiGmWindow extends foundry.applications.api.HandlebarsApplicationMi
     }
 
     return {
-      voiceTranscriptEnabled: Settings.isVoiceTranscriptEnabled(),
       loreIndexExists: availableChapters.length > 0,
       availableChapters,
       selectedChapter: this._selectedChapter,
@@ -178,7 +176,10 @@ Include 1-3 npcCandidates ranked by likelihood. Use names exactly as they appear
       );
 
       // Strip any markdown fences the model may have added
-      const json = content.trim().replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '');
+      const json = content
+        .trim()
+        .replace(/^```(?:json)?\n?/, '')
+        .replace(/\n?```$/, '');
       this._assessment = JSON.parse(json) as SituationAssessment;
       this._confirmedScene = this._assessment.currentScene;
       this._phase = 'confirming';

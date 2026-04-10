@@ -35,7 +35,6 @@ declare const game: BeaversAiGame;
 
 interface SettingConfig {
   'beavers-ai-assistant.aiAssistantPassword': string;
-  'beavers-ai-assistant.voiceTranscriptEnabled': boolean;
   'beavers-ai-assistant.aiAssistantEnabled': boolean;
   'beavers-ai-assistant.aiProvider': string;
   'beavers-ai-assistant.claudeApiKey': string;

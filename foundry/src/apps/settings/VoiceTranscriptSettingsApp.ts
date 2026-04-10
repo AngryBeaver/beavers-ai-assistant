@@ -1,7 +1,6 @@
-import { AI_ASSISTANT_USER_NAME, HOOKS, NAMESPACE, SETTINGS } from '../../definitions.js';
+import { AI_ASSISTANT_USER_NAME, NAMESPACE, SETTINGS } from '../../definitions.js';
 
 interface VoiceTranscriptContext {
-  enabled: boolean;
   userId: string;
   password: string;
 }
@@ -30,8 +29,7 @@ export class VoiceTranscriptSettingsApp extends (foundry.applications.api.Handle
     // @ts-ignore
     const user = game.users.find((u: any) => u.name === AI_ASSISTANT_USER_NAME);
     const password = game.settings.get(NAMESPACE, SETTINGS.AI_ASSISTANT_PASSWORD) as string;
-    const enabled = game.settings.get(NAMESPACE, SETTINGS.VOICE_TRANSCRIPT_ENABLED) as boolean;
-    return { enabled, userId: user?.id ?? '—', password };
+    return { userId: user?.id ?? '—', password };
   }
 
   static async _onCopyUserId(this: VoiceTranscriptSettingsApp): Promise<void> {
@@ -52,7 +50,7 @@ export class VoiceTranscriptSettingsApp extends (foundry.applications.api.Handle
     // @ts-ignore
     const user = game.users.find((u: any) => u.name === AI_ASSISTANT_USER_NAME);
     if (!user) {
-      ui.notifications.warn('AI Assistant user does not exist yet. Enable Voice Transcript first.');
+      ui.notifications.warn('AI Assistant user does not exist yet.');
       return;
     }
     const newPassword = foundry.utils.randomID(32);
@@ -62,15 +60,6 @@ export class VoiceTranscriptSettingsApp extends (foundry.applications.api.Handle
   }
 
   static async _onSave(this: VoiceTranscriptSettingsApp): Promise<void> {
-    const enabled = (this.element.querySelector('#vt-enabled') as HTMLInputElement).checked;
-    const wasEnabled = game.settings.get(NAMESPACE, SETTINGS.VOICE_TRANSCRIPT_ENABLED) as boolean;
-
-    await game.settings.set(NAMESPACE, SETTINGS.VOICE_TRANSCRIPT_ENABLED, enabled);
-
-    if (enabled !== wasEnabled) {
-      Hooks.callAll(HOOKS.VOICE_TRANSCRIPT_ENABLED_CHANGED, enabled);
-    }
-
     ui.notifications.info('Voice Transcript settings saved.');
     await this.close();
   }

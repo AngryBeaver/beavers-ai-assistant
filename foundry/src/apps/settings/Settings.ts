@@ -19,11 +19,6 @@ export class Settings {
     return enabled && !!apiKey;
   }
 
-  /** True when Voice Transcript is enabled. */
-  static isVoiceTranscriptEnabled(): boolean {
-    return game.settings.get(NAMESPACE, SETTINGS.VOICE_TRANSCRIPT_ENABLED) as boolean;
-  }
-
   private registerSettings(): void {
     // hidden bookkeeping
     game.settings.register(NAMESPACE, SETTINGS.AI_ASSISTANT_PASSWORD, {
@@ -31,14 +26,6 @@ export class Settings {
       config: false,
       type: String,
       default: '',
-    });
-
-    // voice transcript
-    game.settings.register(NAMESPACE, SETTINGS.VOICE_TRANSCRIPT_ENABLED, {
-      scope: 'world',
-      config: false,
-      type: Boolean,
-      default: false,
     });
 
     // ai assistant
