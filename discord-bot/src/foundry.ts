@@ -3,15 +3,8 @@ import { BeaversClient } from 'beavers-voice-transcript-client';
 const FOUNDRY_URL = process.env.FOUNDRY_URL ?? 'http://localhost:30000';
 const FOUNDRY_USER = process.env.FOUNDRY_USER ?? '';
 const FOUNDRY_PASS = process.env.FOUNDRY_PASS ?? '';
-const FOLDER_NAME = process.env.FOUNDRY_FOLDER_NAME ?? 'Session Transcripts';
 
 let client: BeaversClient | null = null;
-let currentJournalId: string | null = null;
-let currentPageName = process.env.FOUNDRY_PAGE_NAME ?? 'Transcript';
-
-export function setPageName(name: string): void {
-  currentPageName = name;
-}
 
 export async function connect(): Promise<void> {
   client = new BeaversClient({
@@ -23,19 +16,8 @@ export async function connect(): Promise<void> {
   console.log('[Foundry] Connected');
 }
 
-function sessionTitle(): string {
-  return `${new Date().toISOString().slice(0, 10)} — Discord Session`;
-}
-
-function escapeHtml(str: string): string {
-  return str
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
-}
-
 export async function showChatBubble(username: string, text: string): Promise<void> {
+  if (!client?.connected) console.warn(`[Foundry] → chatBubble (connected=${client?.connected})`);
   try {
     await client!.chatBubble(username, text);
   } catch (err) {
@@ -43,19 +25,23 @@ export async function showChatBubble(username: string, text: string): Promise<vo
   }
 }
 
-export async function appendTranscript(username: string, text: string): Promise<void> {
+export async function transcribeJournal(username: string, text: string): Promise<void> {
+  if (!client?.connected)
+    console.warn(`[Foundry] → transcribeJournal (connected=${client?.connected})`);
   try {
-    if (!currentJournalId) {
-      const journal = await client!.writeJournal({ name: sessionTitle(), folder: FOLDER_NAME });
-      currentJournalId = journal?._id ?? journal?.id ?? null;
-      console.log(`[Foundry] Created journal: ${sessionTitle()} (${currentJournalId})`);
-    }
-
-    const html = `<p><strong>${escapeHtml(username)}:</strong> ${escapeHtml(text)}</p>`;
-    await client!.appendJournalPage(currentJournalId!, currentPageName, html);
-
+    await client!.transcribeJournal(text, username);
     console.log(`[Foundry] Saved — ${username}: ${text}`);
   } catch (err) {
     console.error(`[Foundry] Failed to save transcript: ${(err as Error).message}`);
+  }
+}
+
+export async function checkGmPresent(): Promise<boolean> {
+  if (!client?.connected) console.warn(`[Foundry] → gmPresent (connected=${client?.connected})`);
+  try {
+    return await client!.gmPresent();
+  } catch (err) {
+    console.error(`[Foundry] gmPresent check failed: ${(err as Error).message}`);
+    return false;
   }
 }

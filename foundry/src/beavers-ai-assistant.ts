@@ -23,9 +23,9 @@ Hooks.once('init', async function () {
 
 Hooks.once('ready', async function () {
   console.log(`${NAMESPACE} | Ready`);
+  SocketApi.start();
   if (game.user.isGM) {
     await ensureAiAssistantUser();
-    SocketApi.start();
   }
 });
 

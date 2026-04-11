@@ -41,6 +41,17 @@ export class SocketApi {
 
   private static async onRequest(data: SocketRequest): Promise<void> {
     if (!data?.id || !data?.action) return;
+
+    // Any connected client can answer gmPresent — used for diagnostics.
+    if (data.action === 'gmPresent') {
+      const response: SocketResponse = {
+        id: data.id,
+        data: { present: !!(game.users as any).activeGM },
+      };
+      game.socket.emit(SOCKET_NAME, response);
+      return;
+    }
+
     if (!game.user.isGM) return;
 
     let result: unknown;
@@ -69,6 +80,12 @@ export class SocketApi {
             data.args[1] as string,
             data.args[2] as string,
             (data.args[3] as number | null) ?? undefined,
+          );
+          break;
+        case 'transcribeJournal':
+          result = await JournalApi.transcribeJournal(
+            data.args[0] as string,
+            data.args[1] as string,
           );
           break;
         case 'chatBubble':

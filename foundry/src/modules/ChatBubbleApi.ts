@@ -18,7 +18,7 @@ export class ChatBubbleApi {
     }
   }
 
-  private static resolveToken(nameOrId: string): Token | undefined {
+  static resolveToken(nameOrId: string): Token | undefined {
     const tokens: Token[] = canvas.tokens.placeables;
 
     // Try direct matches first: token/actor id, token name, actor name

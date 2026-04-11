@@ -70,7 +70,6 @@ docker compose -f ../discord-bot-compose.cpu.yml up -d
 | `BOT_NAME` | `Scribe` | Trigger word the bot listens for |
 | `BOT_COMMAND_START` | `write down` | Phrase to start writing to FoundryVTT |
 | `BOT_COMMAND_PAUSE` | `stop it` | Phrase to pause writing |
-| `BOT_COMMAND_PAGE` | `new page` | Phrase to switch to a new journal page |
 
 ### Whisper
 

@@ -41,7 +41,6 @@ The bot starts in **listen-only mode** and is controlled by voice commands:
 |---|---|
 | `{BOT_NAME} {BOT_COMMAND_START}` | Start writing transcripts to Foundry |
 | `{BOT_NAME} {BOT_COMMAND_PAUSE}` | Pause — transcripts go to console only |
-| `{BOT_NAME} {BOT_COMMAND_PAGE} <name>` | Switch to a new journal page named `<name>` |
 
 ## Using the client in your own tool
 

@@ -9,7 +9,7 @@ import {
 import * as prism from 'prism-media';
 import { VoiceBasedChannel } from 'discord.js';
 import { transcribe } from './whisper.js';
-import { appendTranscript, setPageName, showChatBubble } from './foundry.js';
+import { transcribeJournal, showChatBubble } from './foundry.js';
 import { detectCommand } from './commands.js';
 
 const SILENCE_TIMEOUT_MS = 1000;
@@ -92,12 +92,6 @@ function listenToUser(
             isRecording = false;
             console.log('[Bot] Recording PAUSED — console only');
             break;
-          case 'page':
-            if (command.pageName) {
-              setPageName(command.pageName);
-              console.log(`[Bot] Page changed to: ${command.pageName}`);
-            }
-            break;
         }
         return; // commands are never written to Foundry or the transcript log
       }
@@ -105,7 +99,7 @@ function listenToUser(
       if (isRecording) {
         console.log(`[${displayName}]: ${transcript}`);
         await Promise.all([
-          appendTranscript(displayName, transcript),
+          transcribeJournal(displayName, transcript),
           showChatBubble(displayName, transcript),
         ]);
       } else {

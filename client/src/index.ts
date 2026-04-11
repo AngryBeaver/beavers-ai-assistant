@@ -4,7 +4,7 @@ import type { JournalData, JournalPageData } from './types.js';
 
 export type { JournalData, JournalPageData };
 
-const SOCKET_NAME = 'module.beavers-voice-transcript';
+const SOCKET_NAME = 'module.beavers-ai-assistant';
 
 interface ClientOptions {
   /** Foundry base URL, e.g. "http://localhost:30000" */
@@ -90,6 +90,10 @@ export class BeaversClient {
     this.#socket = null;
   }
 
+  get connected(): boolean {
+    return this.#socket?.connected ?? false;
+  }
+
   // ── API methods ─────────────────────────────────────────────────────────────
 
   /** List journals and subfolders. Omit folder to list root. */
@@ -125,6 +129,20 @@ export class BeaversClient {
   }
 
   /**
+   * Append a transcribed line to today's session journal.
+   * Resolves speaker from nameOrId (token name / GM / nameOrId fallback).
+   */
+  async transcribeJournal(msg: string, nameOrId: string): Promise<void> {
+    return this.#request('transcribeJournal', [msg, nameOrId]);
+  }
+
+  /** Check whether a Foundry GM session is currently active. */
+  async gmPresent(): Promise<boolean> {
+    const result = await this.#request<{ present: boolean }>('gmPresent', []);
+    return result.present;
+  }
+
+  /**
    * Append HTML to a transcript page. Auto-rotates to a new page when the
    * current one exceeds maxPageBytes (default 50 KB). Pages are named
    * "<pageName>", "<pageName> (2)", "<pageName> (3)", etc.
@@ -141,12 +159,12 @@ export class BeaversClient {
   // ── Internal ────────────────────────────────────────────────────────────────
 
   async #request<T>(action: string, args: unknown[]): Promise<T> {
-    if (!this.#socket?.connected) throw new Error('Not connected. Call connect() first.');
+    if (!this.#socket?.connected) throw new Error(`Not connected — socket is ${this.#socket ? 'disconnected' : 'not initialised'}. Call connect() first.`);
 
     const id = randomUUID();
     return new Promise<T>((resolve, reject) => {
       const timer = setTimeout(
-        () => reject(new Error(`Request "${action}" timed out.`)),
+        () => reject(new Error(`Request "${action}" timed out — socket connected but no Foundry response (GM may not be present).`)),
         this.#timeout,
       );
 

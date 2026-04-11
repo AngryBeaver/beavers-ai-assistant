@@ -21,7 +21,7 @@
     "typescript-eslint": "^8.0.0"
   },
   "dependencies": {
-    "@discordjs/voice": "^0.19.1",
+    "@discordjs/voice": "^0.19.2",
     "beavers-voice-transcript-client": "workspace:*",
     "discord.js": "^14.25.1",
     "dotenv": "^17.3.1",

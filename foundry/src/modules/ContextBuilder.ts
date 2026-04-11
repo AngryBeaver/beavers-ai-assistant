@@ -28,7 +28,7 @@ export interface ActorData {
 
 export interface JournalPageData {
   name: string;
-  text?: { content?: string };
+  text?: { content?: string; markdown?: string; format?: number };
 }
 
 export interface JournalData {
@@ -59,6 +59,11 @@ export interface GameData {
     find(fn: (j: JournalData) => boolean): JournalData | undefined;
     filter(fn: (j: JournalData) => boolean): JournalData[];
   };
+}
+
+function pageText(page: JournalPageData): string {
+  if (page.text?.format === 2 && page.text.markdown) return page.text.markdown;
+  return stripHtml(page.text?.content ?? '');
 }
 
 export class ContextBuilder {
@@ -124,7 +129,7 @@ export class ContextBuilder {
       if (firstNote.journalEntryId) {
         const journal = this.#game.journal?.find((j) => j.id === firstNote.journalEntryId);
         if (journal && journal.pages.contents.length > 0) {
-          const noteContent = stripHtml(journal.pages.contents[0].text?.content ?? '').trim();
+          const noteContent = pageText(journal.pages.contents[0]).trim();
           if (noteContent) parts.push(`**Notes:** ${noteContent}`);
         }
       }
@@ -210,7 +215,7 @@ export class ContextBuilder {
 
     const entries: string[] = [];
     for (const page of journal.pages.contents) {
-      const lines = stripHtml(page.text?.content ?? '')
+      const lines = pageText(page)
         .split('\n')
         .map((l) => l.trim())
         .filter((l) => l.length > 0);
@@ -241,7 +246,7 @@ export class ContextBuilder {
     const pages = journal.pages.contents;
     if (!pages.length) return null;
 
-    const content = stripHtml(pages[pages.length - 1].text?.content ?? '').trim();
+    const content = pageText(pages[pages.length - 1]).trim();
     return content || null;
   }
 
@@ -279,7 +284,7 @@ export class ContextBuilder {
     const allPages: Array<{ name: string; content: string }> = [];
     for (const j of journals) {
       for (const page of j.pages.contents) {
-        const content = stripHtml(page.text?.content ?? '').trim();
+        const content = pageText(page).trim();
         if (content) allPages.push({ name: `${j.name} / ${page.name}`, content });
       }
     }
@@ -316,7 +321,7 @@ export class ContextBuilder {
     const overviewPage = pages.find((p) => p.name === 'Overview');
     if (!overviewPage) return null;
 
-    const overviewText = stripHtml(overviewPage.text?.content ?? '').trim();
+    const overviewText = pageText(overviewPage).trim();
     if (!overviewText) return null;
 
     const parts: string[] = [`## Overview\n${overviewText}`];
@@ -324,14 +329,14 @@ export class ContextBuilder {
     if (selectedChapter) {
       const chapterPage = pages.find((p) => p.name === `Chapter: ${selectedChapter}`);
       if (chapterPage) {
-        const text = stripHtml(chapterPage.text?.content ?? '').trim();
+        const text = pageText(chapterPage).trim();
         if (text) parts.push(`## Chapter: ${selectedChapter}\n${text}`);
       }
 
       if (selectedScene) {
         const scenePage = pages.find((p) => p.name === `Scene: ${selectedScene}`);
         if (scenePage) {
-          const text = stripHtml(scenePage.text?.content ?? '').trim();
+          const text = pageText(scenePage).trim();
           if (text) parts.push(`## Scene: ${selectedScene}\n${text}`);
         }
       }

@@ -1,4 +1,5 @@
-import { NAMESPACE } from '../definitions.js';
+import { MODULE_FOLDER_NAME, NAMESPACE, SESSION_FOLDER_NAME } from '../definitions.js';
+import { ChatBubbleApi } from './ChatBubbleApi.js';
 import { JournalData, JournalPageData } from '../types.js';
 
 export class JournalApi {
@@ -107,6 +108,62 @@ export class JournalApi {
       // @ts-ignore
       return journal.createEmbeddedDocuments('JournalEntryPage', [pageData]);
     }
+  }
+
+  /**
+   * Append a transcribed line to today's date-named session journal.
+   * Resolves speaker from nameOrId: matched token name > GM > nameOrId.
+   * Writes markdown: "**Speaker:** msg"
+   */
+  static async transcribeJournal(msg: string, nameOrId: string): Promise<void> {
+    const speaker = JournalApi.resolveSpeaker(nameOrId);
+
+    const moduleFolder = await JournalApi.ensureFolder(MODULE_FOLDER_NAME, null);
+    const sessionFolder = await JournalApi.ensureFolder(SESSION_FOLDER_NAME, moduleFolder.id);
+
+    const journalName = new Date().toISOString().slice(0, 10);
+    let journal: any =
+      game.journal.find((j: any) => j.folder?.id === sessionFolder.id && j.name === journalName) ??
+      null;
+    if (!journal) {
+      // @ts-ignore
+      journal = await JournalEntry.create({ name: journalName, folder: sessionFolder.id });
+    }
+
+    const line = `**${speaker}:** ${msg}\n`;
+    // @ts-ignore
+    const page = journal.pages.getName('Transcript');
+    if (!page) {
+      // @ts-ignore
+      await journal.createEmbeddedDocuments('JournalEntryPage', [
+        { name: 'Transcript', type: 'text', text: { markdown: line, format: 2 } },
+      ]);
+    } else {
+      const existing = page.text?.markdown ?? '';
+      await page.update({ 'text.format': 2, 'text.markdown': existing + line });
+    }
+  }
+
+  private static resolveSpeaker(nameOrId: string): string {
+    const token = ChatBubbleApi.resolveToken(nameOrId);
+    if (token) return token.name;
+
+    const user = (game.users as any).find((u: any) => u.name === nameOrId || u.id === nameOrId);
+    if (user?.role === CONST.USER_ROLES.GAMEMASTER) return 'GM';
+
+    return nameOrId;
+  }
+
+  private static async ensureFolder(name: string, parentId: string | null): Promise<any> {
+    const existing = game.folders.find(
+      (f: any) =>
+        f.type === 'JournalEntry' &&
+        f.name === name &&
+        (parentId ? f.folder?.id === parentId : f.folder == null),
+    );
+    if (existing) return existing;
+    // @ts-ignore
+    return Folder.create({ name, type: 'JournalEntry', folder: parentId });
   }
 
   /**
