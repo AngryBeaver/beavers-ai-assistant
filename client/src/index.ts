@@ -159,12 +159,20 @@ export class BeaversClient {
   // ── Internal ────────────────────────────────────────────────────────────────
 
   async #request<T>(action: string, args: unknown[]): Promise<T> {
-    if (!this.#socket?.connected) throw new Error(`Not connected — socket is ${this.#socket ? 'disconnected' : 'not initialised'}. Call connect() first.`);
+    if (!this.#socket?.connected)
+      throw new Error(
+        `Not connected — socket is ${this.#socket ? 'disconnected' : 'not initialised'}. Call connect() first.`,
+      );
 
     const id = randomUUID();
     return new Promise<T>((resolve, reject) => {
       const timer = setTimeout(
-        () => reject(new Error(`Request "${action}" timed out — socket connected but no Foundry response (GM may not be present).`)),
+        () =>
+          reject(
+            new Error(
+              `Request "${action}" timed out — socket connected but no Foundry response (GM may not be present).`,
+            ),
+          ),
         this.#timeout,
       );
 
