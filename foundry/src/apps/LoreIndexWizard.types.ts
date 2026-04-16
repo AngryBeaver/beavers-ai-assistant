@@ -103,6 +103,7 @@ export interface WizardContext {
   modelContext: ModelContext;
   selectedProvider: AiProvider;
   selectedModel: string;
+  selectedReasoningEffort: string;
   availableModels: string[];
   modelFetchError: boolean;
   estimatedInputTokensFormatted: string;

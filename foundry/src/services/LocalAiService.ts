@@ -28,6 +28,7 @@ export class LocalAiService implements AiService {
         model: this.model(options),
         max_tokens: options?.max_tokens || 2048,
         temperature: options?.temperature ?? 0.7,
+        ...(options?.reasoning_effort ? { reasoning_effort: options.reasoning_effort } : {}),
         messages: [
           { role: 'system', content: systemPrompt },
           { role: 'user', content: userPrompt },
@@ -40,12 +41,32 @@ export class LocalAiService implements AiService {
     }
 
     const data = (await response.json()) as any;
-    const msg = data.choices[0]?.message;
+    const choice = data.choices?.[0];
+    const finishReason = choice?.finish_reason;
+    if (finishReason === 'length') {
+      throw new Error('LocalAI: context length exceeded — output was truncated. Reduce input size or increase context limit.');
+    }
+    if (finishReason === 'error') {
+      throw new Error('LocalAI: model returned finish_reason=error. Check model logs for details.');
+    }
+    const msg = choice?.message;
     if (msg?.content || msg?.reasoning) {
-      return {
-        content: msg.content?.trim() ?? '',
-        ...(msg.reasoning ? { reasoning: msg.reasoning.trim() } : {}),
-      };
+      let content: string = msg.content?.trim() ?? '';
+      let reasoning: string = msg.reasoning?.trim() ?? '';
+      // qwen3 routes both thinking and answer through msg.reasoning.
+      // If content is empty, split on </think> to extract the answer.
+      if (!content && reasoning) {
+        const thinkEnd = reasoning.indexOf('</think>');
+        if (thinkEnd >= 0) {
+          content = reasoning.slice(thinkEnd + 8).trimStart();
+          reasoning = reasoning.slice(0, thinkEnd).trim();
+        } else {
+          // No </think> — thinking disabled, whole reasoning is the answer.
+          content = reasoning;
+          reasoning = '';
+        }
+      }
+      return { content, ...(reasoning ? { reasoning } : {}) };
     }
     throw new Error('Unexpected LocalAI response format');
   }
@@ -116,6 +137,7 @@ export class LocalAiService implements AiService {
         max_tokens: options?.max_tokens || 2048,
         temperature: options?.temperature ?? 0.7,
         stream: true,
+        ...(options?.reasoning_effort ? { reasoning_effort: options.reasoning_effort } : {}),
         messages: [
           { role: 'system', content: systemPrompt },
           { role: 'user', content: userPrompt },
@@ -130,16 +152,72 @@ export class LocalAiService implements AiService {
     const reader = response.body!.getReader();
     const decoder = new TextDecoder();
     let fullText = '';
-    let buffer = '';
+    let sseBuffer = '';
+    // qwen3 routes both thinking and answer through delta.reasoning.
+    // Strategy:
+    //   - If reasoning starts with <think>: stream thinking chunks out as
+    //     'reasoning' in real-time; switch to 'content' after </think>.
+    //   - If reasoning does NOT start with <think>: thinking is disabled,
+    //     buffer silently and emit the whole thing as 'content' at stream end.
+    let reasoningBuf = '';
+    let inThink = false;   // currently inside a <think> block
+    let pastThink = false; // </think> already seen, now streaming the answer
+
+    const handleReasoning = (chunk: string): void => {
+      if (pastThink) {
+        fullText += chunk;
+        onChunk(chunk, 'content');
+        return;
+      }
+
+      reasoningBuf += chunk;
+
+      if (!inThink) {
+        // Wait until we have enough to detect the opening tag.
+        if (reasoningBuf.length < 7 && !reasoningBuf.includes('<think>')) return;
+
+        if (reasoningBuf.startsWith('<think>')) {
+          inThink = true;
+          // Emit the opening tag itself as reasoning so listeners see it.
+          // Fall through to the inThink path below to flush the buffer.
+        } else {
+          // No <think> — thinking disabled. Keep buffering silently.
+          return;
+        }
+      }
+
+      // Inside <think> block: check for closing tag.
+      const thinkEnd = reasoningBuf.indexOf('</think>');
+      if (thinkEnd >= 0) {
+        pastThink = true;
+        inThink = false;
+        const thinkPart = reasoningBuf.slice(0, thinkEnd);
+        if (thinkPart) onChunk(thinkPart, 'reasoning');
+        const answerPart = reasoningBuf.slice(thinkEnd + 8).trimStart();
+        reasoningBuf = '';
+        if (answerPart) {
+          fullText += answerPart;
+          onChunk(answerPart, 'content');
+        }
+      } else {
+        // Still inside <think> — stream out all but the last 7 chars
+        // (guard against </think> spanning two chunks).
+        const safe = reasoningBuf.length > 7 ? reasoningBuf.length - 7 : 0;
+        if (safe > 0) {
+          onChunk(reasoningBuf.slice(0, safe), 'reasoning');
+          reasoningBuf = reasoningBuf.slice(safe);
+        }
+      }
+    };
 
     try {
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
 
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split('\n');
-        buffer = lines.pop() ?? '';
+        sseBuffer += decoder.decode(value, { stream: true });
+        const lines = sseBuffer.split('\n');
+        sseBuffer = lines.pop() ?? '';
 
         for (const line of lines) {
           if (!line.startsWith('data: ')) continue;
@@ -147,16 +225,28 @@ export class LocalAiService implements AiService {
           if (raw === '[DONE]') continue;
           try {
             const event = JSON.parse(raw) as any;
-            const reasoning = event.choices[0]?.delta?.reasoning;
-            const content = event.choices[0]?.delta?.content;
-            if (reasoning) {
-              onChunk(reasoning, 'reasoning');
+
+            if (event.error) {
+              throw new Error(`LocalAI stream error: ${event.error.message ?? JSON.stringify(event.error)}`);
             }
-            if (content) {
-              fullText += content;
-              onChunk(content, 'content');
+
+            const choice = event.choices?.[0];
+            const finishReason = choice?.finish_reason;
+            if (finishReason === 'length') {
+              throw new Error('LocalAI: context length exceeded — output was truncated. Reduce input size or increase context limit.');
             }
-          } catch {
+            if (finishReason === 'error') {
+              throw new Error('LocalAI: model returned finish_reason=error. Check model logs for details.');
+            }
+
+            const delta = choice?.delta;
+            if (delta?.reasoning) handleReasoning(delta.reasoning);
+            if (delta?.content) {
+              fullText += delta.content;
+              onChunk(delta.content, 'content');
+            }
+          } catch (chunkErr) {
+            if ((chunkErr as Error).message.startsWith('LocalAI')) throw chunkErr;
             // malformed SSE line, skip
           }
         }
@@ -166,6 +256,19 @@ export class LocalAiService implements AiService {
       throw err;
     } finally {
       reader.releaseLock();
+    }
+
+    // Flush remaining buffer.
+    if (reasoningBuf) {
+      if (!pastThink && !inThink) {
+        // Never saw <think> — thinking disabled, whole buffer is the answer.
+        fullText = reasoningBuf;
+        onChunk(reasoningBuf, 'content');
+      } else {
+        // Tail of a <think> block (stream ended before </think>, or leftover
+        // guard bytes after </think>). Emit as reasoning.
+        onChunk(reasoningBuf, 'reasoning');
+      }
     }
 
     return fullText;

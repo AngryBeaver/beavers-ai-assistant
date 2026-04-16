@@ -35,17 +35,13 @@ export class LoreIndexBuilder {
 
   /** Check whether a `Chapter: <name>` page already exists in the lore index. */
   isChapterIndexed(chapterName: string): boolean {
-    const modFolder = (this.#game as any).folders?.find(
-      (f: any) => f.name === MODULE_FOLDER_NAME && f.type === 'JournalEntry',
+    const loreFolder = this._getLoreIndexFolder();
+    if (!loreFolder) return false;
+    const journal = (this.#game as any).journal?.find(
+      (j: any) => j.folder?.id === loreFolder.id && j.name === chapterName,
     );
-    if (!modFolder) return false;
-    const indexJournal = (this.#game as any).journal?.find(
-      (j: any) => j.folder?.id === modFolder.id && j.name === LORE_INDEX_JOURNAL_NAME,
-    );
-    if (!indexJournal) return false;
-    return (indexJournal.pages.contents as any[]).some(
-      (p: any) => p.name === `Chapter: ${chapterName}`,
-    );
+    if (!journal) return false;
+    return (journal.pages.contents as any[]).some((p: any) => p.name === 'Summary');
   }
 
   /**
@@ -92,7 +88,8 @@ export class LoreIndexBuilder {
     callOptions: CallOptions,
     onProgress: (line: string) => void,
   ): Promise<number> {
-    await this._ensureLoreIndexJournal();
+    const loreFolder = await this._ensureLoreIndexFolder();
+    const chapterJournal = await this._ensureChapterJournal(chapter.name, loreFolder.id);
 
     const content = this.collectChapterContent(chapter);
     if (!content.trim()) {
@@ -143,6 +140,13 @@ Rules:
 
     const userPrompt = `Index this chapter:\n\n${content}\n\nBegin with ---CHAPTER: ${chapter.name}---`;
 
+    // Write placeholder Summary page first so it appears as the first page in the journal
+    await JournalApi.writeJournalPage(chapterJournal.id, {
+      name: 'Summary',
+      type: 'text',
+      text: { markdown: '*(indexing…)*', format: 2 },
+    });
+
     onProgress(`→ Sending to AI…`);
 
     // Stream the response, writing pages incrementally as each block closes.
@@ -160,10 +164,10 @@ Rules:
       if (block.type === 'SCENE') {
         const name = block.name;
         writeChain = writeChain.then(async () => {
-          await JournalApi.writeJournalPage(LORE_INDEX_JOURNAL_NAME, {
+          await JournalApi.writeJournalPage(chapterJournal.id, {
             name: `Scene: ${name}`,
             type: 'text',
-            text: { content: `<div>${escapeHtml(text)}</div>`, format: 1 },
+            text: { markdown: text, format: 2 },
           });
           onProgress(`  ✓ Scene: ${name}`);
           sceneCount++;
@@ -197,7 +201,7 @@ Rules:
           }
         }
       },
-      { ...callOptions, max_tokens: 32768 },
+      callOptions,
     );
 
     // Flush remaining buffer + final block
@@ -207,12 +211,12 @@ Rules:
     // Wait for all scene page writes to complete
     await writeChain;
 
-    // Write chapter summary page last (after all scenes)
+    // Update the Summary placeholder with the real content
     if (chapterSummary) {
-      await JournalApi.writeJournalPage(LORE_INDEX_JOURNAL_NAME, {
-        name: `Chapter: ${chapter.name}`,
+      await JournalApi.writeJournalPage(chapterJournal.id, {
+        name: 'Summary',
         type: 'text',
-        text: { content: `<div>${escapeHtml(chapterSummary)}</div>`, format: 1 },
+        text: { markdown: chapterSummary, format: 2 },
       });
       onProgress(`  ✓ Chapter summary written.`);
     }
@@ -225,7 +229,8 @@ Rules:
    * index, plus optional background source text from an overview-role chapter.
    */
   async indexOverview(overviewSource?: string, callOptions?: CallOptions): Promise<void> {
-    await this._ensureLoreIndexJournal();
+    const loreFolder = await this._ensureLoreIndexFolder();
+    const overviewJournal = await this._ensureChapterJournal('Overview', loreFolder.id);
 
     const chapterSummaries = this._readChapterSummaries();
 
@@ -263,7 +268,7 @@ Rules:
       max_tokens: 4096,
     });
 
-    await JournalApi.writeJournalPage(LORE_INDEX_JOURNAL_NAME, {
+    await JournalApi.writeJournalPage(overviewJournal.id, {
       name: 'Overview',
       type: 'text',
       text: { content: `<div>${escapeHtml(overview)}</div>`, format: 1 },
@@ -274,33 +279,52 @@ Rules:
   // Private — per-chapter helpers
   // ---------------------------------------------------------------------------
 
-  private async _ensureLoreIndexJournal(): Promise<void> {
-    const existing = (this.#game as any).journal?.find(
-      (j: any) => j.name === LORE_INDEX_JOURNAL_NAME,
+  private async _ensureLoreIndexFolder(): Promise<any> {
+    let modFolder = (this.#game as any).folders?.find(
+      (f: any) => f.name === MODULE_FOLDER_NAME && f.type === 'JournalEntry' && !f.folder,
     );
-    if (!existing) {
-      await JournalApi.writeJournal({
+    if (!modFolder) {
+      modFolder = await (Folder as any).create({ name: MODULE_FOLDER_NAME, type: 'JournalEntry' });
+    }
+    let loreFolder = (this.#game as any).folders?.find(
+      (f: any) =>
+        f.name === LORE_INDEX_JOURNAL_NAME &&
+        f.type === 'JournalEntry' &&
+        f.folder?.id === modFolder.id,
+    );
+    if (!loreFolder) {
+      loreFolder = await (Folder as any).create({
         name: LORE_INDEX_JOURNAL_NAME,
-        folder: MODULE_FOLDER_NAME,
-        pages: [],
+        type: 'JournalEntry',
+        folder: modFolder.id,
       });
     }
+    return loreFolder;
+  }
+
+  private async _ensureChapterJournal(chapterName: string, loreFolderId: string): Promise<any> {
+    let journal = (this.#game as any).journal?.find(
+      (j: any) => j.folder?.id === loreFolderId && j.name === chapterName,
+    );
+    if (!journal) {
+      journal = await (JournalEntry as any).create({ name: chapterName, folder: loreFolderId });
+    }
+    return journal;
   }
 
   private _readChapterSummaries(): string[] {
-    const modFolder = (this.#game as any).folders?.find(
-      (f: any) => f.name === MODULE_FOLDER_NAME && f.type === 'JournalEntry',
-    );
-    const indexJournal = (this.#game as any).journal?.find(
-      (j: any) => j.folder?.id === modFolder?.id && j.name === LORE_INDEX_JOURNAL_NAME,
-    );
-    if (!indexJournal) return [];
+    const loreFolder = this._getLoreIndexFolder();
+    if (!loreFolder) return [];
 
     const summaries: string[] = [];
-    for (const page of indexJournal.pages.contents as any[]) {
-      if (page.name?.startsWith('Chapter: ')) {
-        const text = stripHtml(page.text?.content ?? '').trim();
-        if (text) summaries.push(`## ${page.name}\n${text}`);
+    const journals = (this.#game as any).journal?.filter(
+      (j: any) => j.folder?.id === loreFolder.id && j.name !== 'Overview',
+    ) ?? [];
+    for (const journal of journals) {
+      const summaryPage = (journal.pages.contents as any[]).find((p: any) => p.name === 'Summary');
+      if (summaryPage) {
+        const text = stripHtml(summaryPage.text?.content ?? '').trim();
+        if (text) summaries.push(`## ${journal.name}\n${text}`);
       }
     }
     return summaries;
@@ -350,19 +374,12 @@ Rules:
     fallbackLocationId: string,
     fallbackLocationType: 'folder' | 'journal',
   ): EnrichmentScene[] {
-    const indexJournal = this._getLoreIndexJournal();
-    if (!indexJournal) return [];
+    const loreFolder = this._getLoreIndexFolder();
+    if (!loreFolder) return [];
 
-    const pages: any[] = indexJournal.pages.contents as any[];
-
-    // Build chapter name → lore text (for scene association) and → images maps
-    const chapterTextMap = new Map<string, string>();
-    for (const p of pages) {
-      if (p.name?.startsWith('Chapter: ')) {
-        const name = (p.name as string).replace('Chapter: ', '');
-        chapterTextMap.set(name, stripHtml(p.text?.content ?? '').toLowerCase());
-      }
-    }
+    const chapterJournals: any[] = (this.#game as any).journal?.filter(
+      (j: any) => j.folder?.id === loreFolder.id && j.name !== 'Overview',
+    ) ?? [];
 
     // Collect images per chapter from source
     const chapterImagesMap = new Map<string, NamedImage[]>();
@@ -379,27 +396,18 @@ Rules:
           }))
         : [];
 
-    // Build one entry per Scene page
+    // Build one entry per Scene page across all chapter journals
     const scenes: EnrichmentScene[] = [];
-    for (const p of pages) {
-      if (!p.name?.startsWith('Scene: ')) continue;
-      const sceneName = (p.name as string).replace('Scene: ', '');
-      const pageText = stripHtml(p.text?.content ?? '');
-      const hasConnections = pageText.includes('#### Connections');
-
-      const lowerScene = sceneName.toLowerCase();
-      let chapterName = '';
-      let images: NamedImage[] = fallbackImages;
-
-      for (const [name, text] of chapterTextMap) {
-        if (text.includes(lowerScene)) {
-          chapterName = name;
-          images = chapterImagesMap.get(name) ?? fallbackImages;
-          break;
-        }
+    for (const journal of chapterJournals) {
+      const chapterName = journal.name as string;
+      const images = chapterImagesMap.get(chapterName) ?? fallbackImages;
+      for (const p of journal.pages.contents as any[]) {
+        if (!p.name?.startsWith('Scene: ')) continue;
+        const sceneName = (p.name as string).replace('Scene: ', '');
+        const pageText = stripHtml(p.text?.content ?? '');
+        const hasConnections = pageText.includes('#### Connections');
+        scenes.push({ sceneName, chapterName, images, hasConnections });
       }
-
-      scenes.push({ sceneName, chapterName, images, hasConnections });
     }
 
     return scenes;
@@ -452,7 +460,7 @@ Symmetric connections are written once. Write nothing else — no prose, no head
 
     const result = await this.#aiService.callWithImage(systemPrompt, userPrompt, imageUrl, {
       ...callOptions,
-      max_tokens: 1024,
+      max_tokens: 8192,
     });
 
     onProgress(`  → Writing connections…`);
@@ -473,7 +481,9 @@ Symmetric connections are written once. Write nothing else — no prose, no head
       : `#### Connections\n\n${result.trim()}`;
     updatedText = updatedText.trimEnd() + '\n\n' + connections;
 
-    await JournalApi.writeJournalPage(LORE_INDEX_JOURNAL_NAME, {
+    const sceneJournalId = this._findJournalForScene(sceneName);
+    if (!sceneJournalId) throw new Error(`Scene journal not found for: "Scene: ${sceneName}"`);
+    await JournalApi.writeJournalPage(sceneJournalId, {
       name: `Scene: ${sceneName}`,
       type: 'text',
       text: { content: `<div>${escapeHtml(updatedText)}</div>`, format: 1 },
@@ -486,27 +496,46 @@ Symmetric connections are written once. Write nothing else — no prose, no head
   // Private — enrichment helpers
   // ---------------------------------------------------------------------------
 
-  private _getLoreIndexJournal(): any | null {
+  private _getLoreIndexFolder(): any | null {
     const modFolder = (this.#game as any).folders?.find(
-      (f: any) => f.name === MODULE_FOLDER_NAME && f.type === 'JournalEntry',
+      (f: any) => f.name === MODULE_FOLDER_NAME && f.type === 'JournalEntry' && !f.folder,
     );
     if (!modFolder) return null;
     return (
-      (this.#game as any).journal?.find(
-        (j: any) => j.folder?.id === modFolder.id && j.name === LORE_INDEX_JOURNAL_NAME,
+      (this.#game as any).folders?.find(
+        (f: any) =>
+          f.name === LORE_INDEX_JOURNAL_NAME &&
+          f.type === 'JournalEntry' &&
+          f.folder?.id === modFolder.id,
       ) ?? null
     );
   }
 
+  private _findJournalForScene(sceneName: string): string | null {
+    const loreFolder = this._getLoreIndexFolder();
+    if (!loreFolder) return null;
+    const journals: any[] = (this.#game as any).journal?.filter(
+      (j: any) => j.folder?.id === loreFolder.id,
+    ) ?? [];
+    for (const journal of journals) {
+      const page = (journal.pages.contents as any[]).find(
+        (p: any) => p.name === `Scene: ${sceneName}`,
+      );
+      if (page) return journal.id as string;
+    }
+    return null;
+  }
+
   private _readScenePageText(sceneName: string): string | null {
-    const journal = this._getLoreIndexJournal();
+    const journalId = this._findJournalForScene(sceneName);
+    if (!journalId) return null;
+    const journal = (this.#game as any).journal?.get(journalId);
     if (!journal) return null;
     const page = (journal.pages.contents as any[]).find(
       (p: any) => p.name === `Scene: ${sceneName}`,
     );
     if (!page) return null;
     const html: string = page.text?.content ?? '';
-    // Strip the outer <div> wrapper added by _writeChapterPages, then unescape
     const inner = html.replace(/^<div>([\s\S]*)<\/div>$/, '$1');
     return unescapeHtml(inner);
   }
@@ -728,7 +757,7 @@ Produce the index as markdown. Start directly with ## Part 1 or ## World if ther
 
     try {
       const { content: index } = await this.#aiService.call(systemPrompt, userPrompt, {
-        max_tokens: 32768,
+        max_tokens: 8192,
       });
       return index;
     } catch (err) {

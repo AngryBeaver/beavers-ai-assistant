@@ -14,6 +14,8 @@ export interface CallOptions {
   temperature?: number;
   max_tokens?: number;
   thinking?: boolean;
+  /** Controls reasoning depth for thinking models (e.g. qwen3). Values: "none" | "low" | "medium" | "high" */
+  reasoning_effort?: string;
   signal?: AbortSignal;
 }
 

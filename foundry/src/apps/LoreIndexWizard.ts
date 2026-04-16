@@ -134,6 +134,7 @@ export class LoreIndexWizard extends foundry.applications.api.HandlebarsApplicat
   private _selectedModel: string = '';
   private _availableModels: string[] = [];
   private _modelFetchError: boolean = false;
+  private _selectedReasoningEffort: string = '';
 
   // Indexing pass state — managed by the runner
   private readonly _runner = new IndexingPassRunner();
@@ -320,6 +321,13 @@ export class LoreIndexWizard extends foundry.applications.api.HandlebarsApplicat
         this._selectedModel = modelSelect.value;
       });
     }
+
+    const reasoningSelect = this.element.querySelector<HTMLSelectElement>('#wizard-reasoning-effort');
+    if (reasoningSelect) {
+      reasoningSelect.addEventListener('change', () => {
+        this._selectedReasoningEffort = reasoningSelect.value;
+      });
+    }
   }
 
   // ---------------------------------------------------------------------------
@@ -371,6 +379,7 @@ export class LoreIndexWizard extends foundry.applications.api.HandlebarsApplicat
       modelContext: this._modelContext,
       selectedProvider: this._selectedProvider,
       selectedModel: this._selectedModel,
+      selectedReasoningEffort: this._selectedReasoningEffort,
       availableModels: this._availableModels,
       modelFetchError: this._modelFetchError,
       estimatedInputTokensFormatted: inputTokens.toLocaleString(),
@@ -404,10 +413,14 @@ export class LoreIndexWizard extends foundry.applications.api.HandlebarsApplicat
       (f: any) => f.name === MODULE_FOLDER_NAME && f.type === 'JournalEntry',
     );
     if (!modFolder) return false;
-    const indexJournal = (game.journal as any)?.find(
-      (j: any) => j.folder?.id === modFolder.id && j.name === LORE_INDEX_JOURNAL_NAME,
+    const loreFolder = (game.folders as any)?.find(
+      (f: any) =>
+        f.name === LORE_INDEX_JOURNAL_NAME &&
+        f.type === 'JournalEntry' &&
+        f.folder?.id === modFolder.id,
     );
-    return !!indexJournal?.pages.size;
+    if (!loreFolder) return false;
+    return !!(game.journal as any)?.some((j: any) => j.folder?.id === loreFolder.id);
   }
 
   private _buildIndexingCtx(): IndexingCtx {
@@ -487,14 +500,17 @@ export class LoreIndexWizard extends foundry.applications.api.HandlebarsApplicat
       (f: any) => f.name === MODULE_FOLDER_NAME && f.type === 'JournalEntry',
     );
     if (!modFolder) return 'none';
-    const indexJournal = (game.journal as any)?.find(
-      (j: any) => j.folder?.id === modFolder.id && j.name === LORE_INDEX_JOURNAL_NAME,
+    const loreFolder = (game.folders as any)?.find(
+      (f: any) =>
+        f.name === LORE_INDEX_JOURNAL_NAME &&
+        f.type === 'JournalEntry' &&
+        f.folder?.id === modFolder.id,
     );
-    if (!indexJournal?.pages.size) return 'none';
-    const hasPage = [...indexJournal.pages.values()].some(
-      (p: any) => p.name?.startsWith('Chapter:') || p.name === 'Overview',
+    if (!loreFolder) return 'none';
+    const hasJournals = (game.journal as any)?.some(
+      (j: any) => j.folder?.id === loreFolder.id,
     );
-    return hasPage ? 'exists' : 'none';
+    return hasJournals ? 'exists' : 'none';
   }
 
   private _resolveLocationName(id: string, type: 'folder' | 'journal'): string {
@@ -840,9 +856,12 @@ export class LoreIndexWizard extends foundry.applications.api.HandlebarsApplicat
   }
 
   private _indexingCallOptions(): CallOptions {
-    const opts: CallOptions = { max_tokens: 32768 };
+    const opts: CallOptions = { max_tokens: 6144 };
     if (this._selectedProvider === 'local-ai' && this._selectedModel) {
       opts.model = this._selectedModel;
+    }
+    if (this._selectedReasoningEffort) {
+      opts.reasoning_effort = this._selectedReasoningEffort;
     }
     if (this._abortController) {
       opts.signal = this._abortController.signal;

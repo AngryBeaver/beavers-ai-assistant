@@ -151,6 +151,19 @@
       </button>
     </div>
 
+    {{#if (eq modelContext "indexing")}}
+    <div class="form-group" style="margin-top:.6rem">
+      <label for="wizard-reasoning-effort" style="font-size:.85em">Reasoning depth:</label>
+      <select id="wizard-reasoning-effort" style="width:auto">
+        <option value="" {{#if (eq selectedReasoningEffort "")}}selected{{/if}}>default</option>
+        <option value="none" {{#if (eq selectedReasoningEffort "none")}}selected{{/if}}>none</option>
+        <option value="low" {{#if (eq selectedReasoningEffort "low")}}selected{{/if}}>low</option>
+        <option value="medium" {{#if (eq selectedReasoningEffort "medium")}}selected{{/if}}>medium</option>
+        <option value="high" {{#if (eq selectedReasoningEffort "high")}}selected{{/if}}>high</option>
+      </select>
+    </div>
+    {{/if}}
+
   </div>
   {{/if}}
 

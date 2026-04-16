@@ -15,14 +15,14 @@ services:
     ports:
       - "8080:8080"
     environment:
-      # Model to load on startup (auto-downloads on first run)
-      - MODEL_NAME=${LOCAL_AI_MODEL:-qwen3.5-9b}
-      # Enable GPU
-      - ENABLE_CUDA=true
-      - GPU_LAYERS=999  # Use as many layers on GPU as possible
+      # Enable float16 precision for GPU acceleration
+      - LOCALAI_F16=true
+      # Disable CSRF middleware so the Foundry module can call the API cross-origin
+      - LOCALAI_DISABLE_CSRF=true
     volumes:
       # Persist downloaded models across container restarts
       - local-ai-models:/models
+      - local-ai-backends:/backends
     restart: unless-stopped
     deploy:
       resources:
@@ -34,4 +34,6 @@ services:
 
 volumes:
   local-ai-models:
+    driver: local
+  local-ai-backends:
     driver: local
