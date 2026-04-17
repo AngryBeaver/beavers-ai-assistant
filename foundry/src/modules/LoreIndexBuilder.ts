@@ -99,6 +99,19 @@ export class LoreIndexBuilder {
     const systemPrompt = `You are a lore indexer for a tabletop RPG adventure.
 You will receive the raw content of one adventure chapter and produce a structured index.
 
+IDENTIFYING SCENES vs AREAS:
+A scene is a major narrative beat or distinct location a party visits as a whole.
+Sub-locations (rooms, shops, buildings) inside a scene are areas within that scene — not separate scenes.
+
+If a section title begins with a number, or a letter followed by a number (e.g. "R1. Cellar",
+"A3. Guard Post", "1. Entrance Hall", "2a. Side Chamber"), that section describes an AREA within
+the current scene — not a new scene. These are map identifiers used to locate areas on a map.
+Preserve them exactly — they are critical for map scanning later.
+
+Even without an explicit identifier, sub-locations within a larger place (individual shops in a
+town, rooms in a dungeon, buildings in a settlement) are areas, not scenes. Ask: can the party
+travel to this as a standalone destination, or is it a part of somewhere they are already?
+
 Use EXACTLY these sentinel delimiters — each on its own line:
 ---CHAPTER: <chapter name>---
 <chapter content — four sections, see below>
@@ -124,17 +137,28 @@ How scenes connect. Which are optional. What gates what. Short prose or brief li
 (only NPCs who appear in this chapter; record what is NEW here, not full biography)
 
 SCENE block format:
-Brief summary — what is at stake, who is involved.
+Brief summary — what is at stake, who is involved. 2-3 sentences.
 
-NPCs: <NPC name> (area <id> if applicable), ...
+#### NPCs
+| NPC | Role in scene | Notes |
+|---|---|---|
+| ... | ... | area <id> if applicable, key info |
 
-#### Areas
-**<id>. <Area Name>** — One sentence: what is here, who is present.
-(one line per area; if source has no explicit identifiers, write flat prose instead)
+#### <id>. <Area Name>
+This is an index entry, not a transcription. Include:
+- Enemies present and any tactically relevant behaviour (e.g. fleeing to trigger a trap, calling reinforcements)
+- Story-relevant items or loot (quest items, named objects, prisoner locations)
+- Traps or hazards only if they have narrative or tactical significance (e.g. enemies use them against the party)
+- Key lore or interactable elements a GM needs at a glance
+Do NOT include: DCs, generic treasure, flavour descriptions, area connections or exits (those are added separately by map scanning).
+Use short prose or a brief bullet list.
+(one #### header per area, using the exact identifier from the source;
+if the source has no explicit identifiers, use a short descriptive heading)
 
 Rules:
-- Include ALL scenes you can identify. Write neutrally — no visited/unvisited framing.
-- Preserve all area identifiers exactly as they appear in the source (1., 2a., A., B., etc.) — never renumber or strip them.
+- A scene is a distinct location or narrative beat — not every section heading is a scene.
+- Write neutrally — no visited/unvisited framing.
+- Preserve all area identifiers exactly as they appear in the source (1., 2a., A., B., R1., etc.) — never renumber or strip them.
 - Do not invent scenes, NPCs, or locations not in the source.
 - Output exactly one ---CHAPTER: ...--- block followed by one ---SCENE: ...--- block per scene.`;
 

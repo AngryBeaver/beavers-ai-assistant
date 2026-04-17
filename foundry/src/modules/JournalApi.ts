@@ -130,7 +130,7 @@ export class JournalApi {
       journal = await JournalEntry.create({ name: journalName, folder: sessionFolder.id });
     }
 
-    const line = `**${speaker}:** ${msg}\n`;
+    const line = `**${speaker}:** ${msg}\n\n`;
     // @ts-ignore
     const page = journal.pages.getName('Transcript');
     if (!page) {
