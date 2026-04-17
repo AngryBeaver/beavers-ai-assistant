@@ -8,7 +8,12 @@ function convertTable(tableInner: string): string {
   for (const rowMatch of tableInner.matchAll(/<tr[^>]*>([\s\S]*?)<\/tr>/gi)) {
     const cells: string[] = [];
     for (const cellMatch of rowMatch[1].matchAll(/<t[dh][^>]*>([\s\S]*?)<\/t[dh]>/gi)) {
-      cells.push(cellMatch[1].replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim());
+      cells.push(
+        cellMatch[1]
+          .replace(/<[^>]*>/g, '')
+          .replace(/\s+/g, ' ')
+          .trim(),
+      );
     }
     if (cells.length) rows.push(cells);
   }
@@ -31,7 +36,10 @@ function convertList(listInner: string, ordered: boolean): string {
   const items: string[] = [];
   let i = 1;
   for (const m of listInner.matchAll(/<li[^>]*>([\s\S]*?)<\/li>/gi)) {
-    const text = m[1].replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim();
+    const text = m[1]
+      .replace(/<[^>]*>/g, '')
+      .replace(/\s+/g, ' ')
+      .trim();
     if (text) items.push(ordered ? `${i++}. ${text}` : `- ${text}`);
   }
   return items.length ? '\n' + items.join('\n') + '\n' : '';

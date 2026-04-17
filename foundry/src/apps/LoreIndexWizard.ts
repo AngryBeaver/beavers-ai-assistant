@@ -322,7 +322,9 @@ export class LoreIndexWizard extends foundry.applications.api.HandlebarsApplicat
       });
     }
 
-    const reasoningSelect = this.element.querySelector<HTMLSelectElement>('#wizard-reasoning-effort');
+    const reasoningSelect = this.element.querySelector<HTMLSelectElement>(
+      '#wizard-reasoning-effort',
+    );
     if (reasoningSelect) {
       reasoningSelect.addEventListener('change', () => {
         this._selectedReasoningEffort = reasoningSelect.value;
@@ -507,9 +509,7 @@ export class LoreIndexWizard extends foundry.applications.api.HandlebarsApplicat
         f.folder?.id === modFolder.id,
     );
     if (!loreFolder) return 'none';
-    const hasJournals = (game.journal as any)?.some(
-      (j: any) => j.folder?.id === loreFolder.id,
-    );
+    const hasJournals = (game.journal as any)?.some((j: any) => j.folder?.id === loreFolder.id);
     return hasJournals ? 'exists' : 'none';
   }
 
