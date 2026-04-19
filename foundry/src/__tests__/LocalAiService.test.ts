@@ -98,7 +98,21 @@ describe('LocalAiService', () => {
       expect(body.model).toBe(DEFAULTS.LOCAL_MODEL);
     });
 
-    it('returns reasoning when content is empty (thinking model)', async () => {
+    it('returns reasoning and content when both are present (deepseek-style)', async () => {
+      vi.stubGlobal(
+        'fetch',
+        mockFetch({
+          choices: [{ message: { content: 'the answer', reasoning: 'some reasoning' } }],
+        }),
+      );
+
+      const service = new LocalAiService(mockGame as any);
+      const result = await service.call('system', 'user');
+
+      expect(result).toEqual({ content: 'the answer', reasoning: 'some reasoning' });
+    });
+
+    it('promotes reasoning to content when content is empty and no think tags (qwen3 thinking disabled)', async () => {
       vi.stubGlobal(
         'fetch',
         mockFetch({
@@ -109,7 +123,7 @@ describe('LocalAiService', () => {
       const service = new LocalAiService(mockGame as any);
       const result = await service.call('system', 'user');
 
-      expect(result).toEqual({ content: '', reasoning: 'some reasoning' });
+      expect(result).toEqual({ content: 'some reasoning' });
     });
 
     it('throws on non-ok response', async () => {

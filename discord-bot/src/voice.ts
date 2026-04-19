@@ -13,6 +13,23 @@ import { transcribeJournal, showChatBubble } from './foundry.js';
 import { detectCommand } from './commands.js';
 
 const SILENCE_TIMEOUT_MS = 1000;
+// At 48000 Hz, 16-bit mono: 96 bytes per millisecond of PCM
+const BYTES_PER_MS = 96;
+const WAV_HEADER_BYTES = 44;
+const MIN_AUDIO_MS = parseInt(process.env.WHISPER_MIN_AUDIO_MS ?? '500', 10);
+const MIN_WAV_BYTES = MIN_AUDIO_MS * BYTES_PER_MS + WAV_HEADER_BYTES;
+
+// Pipe-separated phrases that Whisper hallucinates on silence/noise
+const HALLUCINATION_PHRASES: string[] = (process.env.WHISPER_HALLUCINATION_FILTER ?? '')
+  .split('|')
+  .map((s) => s.trim().toLowerCase())
+  .filter(Boolean);
+
+function isHallucination(transcript: string): boolean {
+  if (!HALLUCINATION_PHRASES.length) return false;
+  const normalized = transcript.trim().toLowerCase();
+  return HALLUCINATION_PHRASES.some((phrase) => normalized === phrase);
+}
 
 let connection: VoiceConnection | null = null;
 let isRecording = false;
@@ -75,10 +92,14 @@ function listenToUser(
 
   buildWavBuffer(pcmStream, async (buffer) => {
     try {
-      if (buffer.length < 4096) return;
+      if (buffer.length < MIN_WAV_BYTES) return;
 
       const transcript = await transcribe(buffer);
       if (!transcript) return;
+      if (isHallucination(transcript)) {
+        console.log(`[Voice] Filtered hallucination from ${displayName}: "${transcript}"`);
+        return;
+      }
 
       const command = detectCommand(transcript);
 

@@ -73,7 +73,7 @@ describe('ContextBuilder — scene section', () => {
     });
     expect(result).toContain('Throne Room');
     expect(result).toContain('**Notes:**');
-    expect(result).toContain('Room with treasure');
+    expect(result).toContain('Room with **treasure**');
     expect(result).not.toContain('<p>');
   });
 

@@ -52,7 +52,9 @@ export class LocalAiService implements AiService {
     const choice = data.choices?.[0];
     const finishReason = choice?.finish_reason;
     if (finishReason === 'length') {
-      throw new Error('LocalAI: context length exceeded — output was truncated. Reduce input size or increase context limit.');
+      throw new Error(
+        'LocalAI: context length exceeded — output was truncated. Reduce input size or increase context limit.',
+      );
     }
     if (finishReason === 'error') {
       throw new Error('LocalAI: model returned finish_reason=error. Check model logs for details.');
@@ -168,7 +170,7 @@ export class LocalAiService implements AiService {
     //   - If reasoning does NOT start with <think>: thinking is disabled,
     //     buffer silently and emit the whole thing as 'content' at stream end.
     let reasoningBuf = '';
-    let inThink = false;   // currently inside a <think> block
+    let inThink = false; // currently inside a <think> block
     let pastThink = false; // </think> already seen, now streaming the answer
 
     const handleReasoning = (chunk: string): void => {
@@ -235,21 +237,33 @@ export class LocalAiService implements AiService {
             const event = JSON.parse(raw) as any;
 
             if (event.error) {
-              throw new Error(`LocalAI stream error: ${event.error.message ?? JSON.stringify(event.error)}`);
+              throw new Error(
+                `LocalAI stream error: ${event.error.message ?? JSON.stringify(event.error)}`,
+              );
             }
 
             const choice = event.choices?.[0];
             const finishReason = choice?.finish_reason;
             if (finishReason === 'length') {
-              throw new Error('LocalAI: context length exceeded — output was truncated. Reduce input size or increase context limit.');
+              throw new Error(
+                'LocalAI: context length exceeded — output was truncated. Reduce input size or increase context limit.',
+              );
             }
             if (finishReason === 'error') {
-              throw new Error('LocalAI: model returned finish_reason=error. Check model logs for details.');
+              throw new Error(
+                'LocalAI: model returned finish_reason=error. Check model logs for details.',
+              );
             }
 
             const delta = choice?.delta;
             if (delta?.reasoning) handleReasoning(delta.reasoning);
             if (delta?.content) {
+              // If reasoning arrived without <think> tags but now content also arrives,
+              // it's a dedicated reasoning field (deepseek-style) — flush as reasoning.
+              if (reasoningBuf && !inThink && !pastThink) {
+                onChunk(reasoningBuf, 'reasoning');
+                reasoningBuf = '';
+              }
               fullText += delta.content;
               onChunk(delta.content, 'content');
             }

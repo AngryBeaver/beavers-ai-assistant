@@ -341,9 +341,10 @@ Rules:
     if (!loreFolder) return [];
 
     const summaries: string[] = [];
-    const journals = (this.#game as any).journal?.filter(
-      (j: any) => j.folder?.id === loreFolder.id && j.name !== 'Overview',
-    ) ?? [];
+    const journals =
+      (this.#game as any).journal?.filter(
+        (j: any) => j.folder?.id === loreFolder.id && j.name !== 'Overview',
+      ) ?? [];
     for (const journal of journals) {
       const summaryPage = (journal.pages.contents as any[]).find((p: any) => p.name === 'Summary');
       if (summaryPage) {
@@ -401,9 +402,10 @@ Rules:
     const loreFolder = this._getLoreIndexFolder();
     if (!loreFolder) return [];
 
-    const chapterJournals: any[] = (this.#game as any).journal?.filter(
-      (j: any) => j.folder?.id === loreFolder.id && j.name !== 'Overview',
-    ) ?? [];
+    const chapterJournals: any[] =
+      (this.#game as any).journal?.filter(
+        (j: any) => j.folder?.id === loreFolder.id && j.name !== 'Overview',
+      ) ?? [];
 
     // Collect images per chapter from source
     const chapterImagesMap = new Map<string, NamedImage[]>();
@@ -538,9 +540,8 @@ Symmetric connections are written once. Write nothing else — no prose, no head
   private _findJournalForScene(sceneName: string): string | null {
     const loreFolder = this._getLoreIndexFolder();
     if (!loreFolder) return null;
-    const journals: any[] = (this.#game as any).journal?.filter(
-      (j: any) => j.folder?.id === loreFolder.id,
-    ) ?? [];
+    const journals: any[] =
+      (this.#game as any).journal?.filter((j: any) => j.folder?.id === loreFolder.id) ?? [];
     for (const journal of journals) {
       const page = (journal.pages.contents as any[]).find(
         (p: any) => p.name === `Scene: ${sceneName}`,
