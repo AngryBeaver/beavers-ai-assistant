@@ -7,7 +7,11 @@ export type ChapterRole = 'chapter' | 'overview' | 'skip';
 export interface ChapterCandidate {
   id: string;
   name: string;
-  sourceType: 'folder' | 'journal' | 'header';
+  /** folder: chapter is a Foundry folder (journals→#, pages→##, h1→###)
+   *  journal: chapter is a journal (pages→#, h1→##)
+   *  page: chapter is a single journal page (h1→# as-is, no heading added)
+   *  header: chapter is a h1/h2 section split from page content */
+  sourceType: 'folder' | 'journal' | 'page' | 'header';
   role: ChapterRole;
   tokens: number;
 }
@@ -32,6 +36,7 @@ export interface FolderLike {
 }
 
 export interface PageLike {
+  name?: string;
   text?: { content?: string };
 }
 
@@ -102,19 +107,18 @@ export class ChapterDetector {
   /**
    * Detect chapter candidates for the given location.
    *
-   * - Journal: chapters are derived from h1/h2 headings in the journal pages.
-   * - Folder (subfolders only): one candidate per subfolder.
-   * - Folder (journals only): one candidate per journal.
-   * - Folder (mixed): returns isMixed=true with separate subfolders/journals
-   *   lists so the caller can ask the GM which to use.
-   * - Folder (empty): the entire folder becomes a single candidate.
+   * - Journal: one candidate per page (sourceType 'page').
+   * - Folder (subfolders only): one candidate per subfolder (sourceType 'folder').
+   * - Folder (journals only): one candidate per journal (sourceType 'journal').
+   * - Folder (mixed): returns isMixed=true with separate subfolders/journals lists.
+   * - Folder (empty): the entire folder becomes a single candidate (sourceType 'folder').
    *
    * The first candidate is automatically flagged as 'overview' if its name
    * matches an intro keyword (see {@link flagIntroCandidate}).
    */
   detect(locationId: string, locationType: 'folder' | 'journal'): DetectionResult {
     if (locationType === 'journal') {
-      const candidates = this._candidatesFromHeaders(locationId);
+      const candidates = this._candidatesFromPages(locationId);
       flagIntroCandidate(candidates);
       return { isMixed: false, candidates, subfolders: [], journals: [] };
     }
@@ -172,33 +176,16 @@ export class ChapterDetector {
     }));
   }
 
-  /**
-   * Split a single journal into candidates using its h1/h2 headings.
-   * Content before the first heading is ignored.
-   * Falls back to a single candidate (the whole journal) if no headings exist.
-   */
-  private _candidatesFromHeaders(journalId: string): ChapterCandidate[] {
+  /** Split journal pages on h1/h2 headings into header candidates.
+   *  Falls back to a single journal-level candidate when no headings exist. */
+  private _candidatesFromPages(journalId: string): ChapterCandidate[] {
     const journal = this.accessor.getJournal(journalId);
     if (!journal) return [];
 
-    const allHtml = journal.pages.contents.map((p) => p.text?.content ?? '').join('\n');
+    const fullHtml = journal.pages.contents.map((p) => p.text?.content ?? '').join('');
 
-    const parts = allHtml.split(/(<h[12][^>]*>[\s\S]*?<\/h[12]>)/gi);
-    const sections: Array<{ name: string; chars: number }> = [];
-    let currentName: string | null = null;
-    let currentChars = 0;
-
-    for (const part of parts) {
-      const match = part.match(/^<h[12][^>]*>([\s\S]*?)<\/h[12]>$/i);
-      if (match) {
-        if (currentName !== null) sections.push({ name: currentName, chars: currentChars });
-        currentName = match[1].replace(/<[^>]*>/g, '').trim();
-        currentChars = 0;
-      } else if (currentName !== null) {
-        currentChars += part.replace(/<[^>]*>/g, '').length;
-      }
-    }
-    if (currentName !== null) sections.push({ name: currentName, chars: currentChars });
+    // Split at each h1/h2 boundary, discarding preamble before the first heading
+    const sections = fullHtml.split(/(?=<h[12][^>]*>)/i).filter((s) => /^<h[12]/i.test(s));
 
     if (sections.length === 0) {
       return [
@@ -207,18 +194,22 @@ export class ChapterDetector {
           name: journal.name,
           sourceType: 'journal',
           role: 'chapter',
-          tokens: Math.ceil(this._charsFromJournal(journalId) / 4),
+          tokens: Math.ceil(fullHtml.replace(/<[^>]*>/g, '').length / 4),
         },
       ];
     }
 
-    return sections.map((s, i) => ({
-      id: `${journalId}::h::${i}`,
-      name: s.name,
-      sourceType: 'header' as const,
-      role: 'chapter' as ChapterRole,
-      tokens: Math.ceil(s.chars / 4),
-    }));
+    return sections.map((section, i) => {
+      const headingInner = section.match(/^<h[12][^>]*>([\s\S]*?)<\/h[12]>/i)?.[1] ?? '';
+      const name = headingInner.replace(/<[^>]*>/g, '').trim() || `Section ${i + 1}`;
+      return {
+        id: `${journalId}::h::${i}`,
+        name,
+        sourceType: 'header' as const,
+        role: 'chapter' as ChapterRole,
+        tokens: Math.ceil(section.replace(/<[^>]*>/g, '').length / 4),
+      };
+    });
   }
 
   // ---------------------------------------------------------------------------

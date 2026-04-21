@@ -1,4 +1,4 @@
-import type { ChapterCandidate } from './ChapterDetector.js';
+import type { ParsedChapter } from './AdventureParser.js';
 
 export type IndexingPhase =
   | 'pre_chapter'
@@ -12,12 +12,11 @@ export type IndexingPhase =
  * Pure state machine for the wizard's chapter-by-chapter indexing pass.
  *
  * No Foundry globals, no AI calls — only tracks what phase the pass is in
- * and exposes clean transition methods. Follows the ChapterDetector pattern:
- * pure logic, no side effects, fully testable without a running Foundry instance.
+ * and exposes clean transition methods.
  */
 export class IndexingPassRunner {
-  private _queue: ChapterCandidate[] = [];
-  private _overviewChapter: ChapterCandidate | null = null;
+  private _queue: ParsedChapter<unknown>[] = [];
+  private _overviewChapter: ParsedChapter<unknown> | null = null;
   private _currentIdx = 0;
   private _phase: IndexingPhase = 'pre_chapter';
   private _log: string[] = [];
@@ -33,13 +32,13 @@ export class IndexingPassRunner {
   get phase(): IndexingPhase {
     return this._phase;
   }
-  get currentChapter(): ChapterCandidate | undefined {
+  get currentChapter(): ParsedChapter<unknown> | undefined {
     return this._queue[this._currentIdx];
   }
-  get nextChapter(): ChapterCandidate | undefined {
+  get nextChapter(): ParsedChapter<unknown> | undefined {
     return this._queue[this._currentIdx + 1];
   }
-  get overviewChapter(): ChapterCandidate | null {
+  get overviewChapter(): ParsedChapter<unknown> | null {
     return this._overviewChapter;
   }
   get currentIdx(): number {
@@ -71,8 +70,7 @@ export class IndexingPassRunner {
   // Transitions
   // ---------------------------------------------------------------------------
 
-  /** Initialise the runner for a new indexing pass. */
-  start(queue: ChapterCandidate[], overviewChapter: ChapterCandidate | null): void {
+  start(queue: ParsedChapter<unknown>[], overviewChapter: ParsedChapter<unknown> | null): void {
     this._queue = queue;
     this._overviewChapter = overviewChapter;
     this._currentIdx = 0;
@@ -84,19 +82,16 @@ export class IndexingPassRunner {
     this._error = null;
   }
 
-  /** Current chapter already has an index page — ask the GM to rebuild or skip. */
   markAlreadyIndexed(): void {
     this._phase = 'already_indexed';
   }
 
-  /** AI call is starting for the current chapter. */
   beginRun(): void {
     this._phase = 'running';
     this._log = [`→ Indexing ${this.currentChapter?.name ?? ''}…`];
     this._error = null;
   }
 
-  /** AI call succeeded; record scene count and advance to the between prompt. */
   chapterComplete(sceneCount: number): void {
     this._completedCount++;
     this._sceneCount += sceneCount;
@@ -104,49 +99,40 @@ export class IndexingPassRunner {
     this._phase = 'between';
   }
 
-  /** AI call failed; show error and return to the pre-chapter prompt. */
   chapterFailed(error: string): void {
     this._error = error;
     this._phase = 'pre_chapter';
   }
 
-  /** Skip the current chapter and move to the next. */
   skipCurrent(): void {
     this._advanceBy(1);
   }
 
-  /** Continue to the next chapter after the between prompt. */
   continueToNext(): void {
     this._advanceBy(1);
   }
 
-  /** Skip the next chapter (as shown in the between prompt) and move past it. */
   skipNext(): void {
     this._advanceBy(2);
   }
 
-  /** Stop the indexing pass early; already-indexed chapters are kept. */
   stopEarly(): void {
     this._phase = 'complete';
   }
 
-  /** All chapters done — start the overview generation. */
   startOverview(): void {
     this._phase = 'overview';
   }
 
-  /** Overview page written successfully. */
   overviewComplete(): void {
     this._phase = 'complete';
   }
 
-  /** Overview generation failed; record the error and still finish. */
   overviewFailed(error: string): void {
     this._error = error;
     this._phase = 'complete';
   }
 
-  /** Append a line to the live log. */
   addLogLine(line: string): void {
     this._log.push(line);
   }

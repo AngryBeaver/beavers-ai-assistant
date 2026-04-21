@@ -8,18 +8,12 @@ import {
 import type { AiProvider } from '../definitions.js';
 import { AiService } from '../services/AiService.js';
 import type { CallOptions } from '../services/AiService.js';
-import {
-  ChapterCandidate,
-  ChapterDetector,
-  ChapterRole,
-  flagIntroCandidate,
-  GameAccessor,
-} from '../modules/ChapterDetector.js';
+import type { ParsedChapter, ChapterRole } from '../modules/AdventureParser.js';
+import { JournalParser, type JournalChapterData } from '../modules/JournalParser/index.js';
 import { LoreIndexBuilder } from '../modules/LoreIndexBuilder.js';
 import { IndexingPassRunner } from '../modules/IndexingPassRunner.js';
 import { EnrichmentPassRunner } from '../modules/EnrichmentPassRunner.js';
 import type {
-  LocationItem,
   WizardStep,
   IndexStatus,
   ModelContext,
@@ -28,32 +22,6 @@ import type {
   WizardContext,
   ChapterCandidateView,
 } from './LoreIndexWizard.types.js';
-
-// ---------------------------------------------------------------------------
-// Foundry GameAccessor implementation
-// ---------------------------------------------------------------------------
-
-function makeFoundryGameAccessor(): GameAccessor {
-  return {
-    getFolder: (id) => (game.folders as any)?.get(id) ?? null,
-
-    getSubfolders: (parentId) => {
-      const items: any[] =
-        (game.folders as any)?.filter(
-          (f: any) => f.folder?.id === parentId && f.type === 'JournalEntry',
-        ) ?? [];
-      return items.sort((a, b) => (a.sort ?? 0) - (b.sort ?? 0));
-    },
-
-    getJournal: (id) => (game.journal as any)?.get(id) ?? null,
-
-    getJournalsInFolder: (folderId) => {
-      const items: any[] =
-        (game.journal as any)?.filter((j: any) => j.folder?.id === folderId) ?? [];
-      return items.sort((a, b) => (a.sort ?? 0) - (b.sort ?? 0));
-    },
-  };
-}
 
 // ---------------------------------------------------------------------------
 // LoreIndexWizard
@@ -78,12 +46,10 @@ export class LoreIndexWizard extends foundry.applications.api.HandlebarsApplicat
     actions: {
       continueFromLocation: LoreIndexWizard._onContinueFromLocation,
       backToLocation: LoreIndexWizard._onBackToLocation,
-      useMixedFolders: LoreIndexWizard._onUseMixedFolders,
-      useMixedJournals: LoreIndexWizard._onUseMixedJournals,
-      useMixedBoth: LoreIndexWizard._onUseMixedBoth,
       confirmChapters: LoreIndexWizard._onConfirmChapters,
       backToChapters: LoreIndexWizard._onBackToChapters,
       refreshModels: LoreIndexWizard._onRefreshModels,
+      previewSource: LoreIndexWizard._onPreviewSource,
       startIndexing: LoreIndexWizard._onStartIndexing,
       // Indexing pass
       cancelIndexing: LoreIndexWizard._onCancelIndexing,
@@ -111,7 +77,6 @@ export class LoreIndexWizard extends foundry.applications.api.HandlebarsApplicat
 
   static PARTS = {
     location: { template: `modules/${NAMESPACE}/templates/wizard/location.hbs` },
-    mixed: { template: `modules/${NAMESPACE}/templates/wizard/mixed.hbs` },
     chapters: { template: `modules/${NAMESPACE}/templates/wizard/chapters.hbs` },
     model: { template: `modules/${NAMESPACE}/templates/wizard/model.hbs` },
     indexing: { template: `modules/${NAMESPACE}/templates/wizard/indexing.hbs` },
@@ -122,11 +87,10 @@ export class LoreIndexWizard extends foundry.applications.api.HandlebarsApplicat
 
   // Wizard navigation state
   private _step: WizardStep = 'location';
-  private _selectedLocation: LocationItem | null = null;
   private _indexStatus: IndexStatus = 'none';
-  private _chapters: ChapterCandidate[] = [];
-  private _mixedFolders: ChapterCandidate[] = [];
-  private _mixedJournals: ChapterCandidate[] = [];
+  private _chapters: ParsedChapter<JournalChapterData>[] = [];
+  private _parserFormValues: Record<string, string> = {};
+  private readonly _parser = new JournalParser(game as any);
 
   // Model step state
   private _modelContext: ModelContext = 'indexing';
@@ -147,8 +111,6 @@ export class LoreIndexWizard extends foundry.applications.api.HandlebarsApplicat
 
   // Active AI call abort controller
   private _abortController: AbortController | null = null;
-
-  private readonly _detector = new ChapterDetector(makeFoundryGameAccessor());
 
   // ---------------------------------------------------------------------------
   // Lifecycle
@@ -176,6 +138,7 @@ export class LoreIndexWizard extends foundry.applications.api.HandlebarsApplicat
     }
 
     if (this._step === 'location') this._setupLocationBadge();
+    if (this._step === 'location') this._setupParserFieldListeners();
     if (this._step === 'chapters') this._setupChapterDragDrop();
     if (this._step === 'model') this._setupModelListeners();
     if (this._step === 'indexing' && this._runner.phase === 'overview') {
@@ -187,53 +150,73 @@ export class LoreIndexWizard extends foundry.applications.api.HandlebarsApplicat
   }
 
   // ---------------------------------------------------------------------------
-  // Location step — live index-status badge
+  // Location step — parser form fields + live index-status badge
   // ---------------------------------------------------------------------------
 
+  /** Keep _parserFormValues in sync whenever any parser field changes. */
+  private _setupParserFieldListeners(): void {
+    const fields = this._parser.getSettingInformation();
+    for (const field of fields) {
+      const el = this.element.querySelector<HTMLSelectElement | HTMLInputElement>(
+        `#parser-field-${field.key}`,
+      );
+      if (!el) continue;
+      el.addEventListener('change', () => {
+        this._parserFormValues = { ...this._parserFormValues, [field.key]: el.value };
+        // Re-run badge update whenever any field changes
+        this._updateLocationBadge();
+      });
+      // Set initial value from stored state
+      if (this._parserFormValues[field.key]) {
+        el.value = this._parserFormValues[field.key];
+      }
+    }
+  }
+
   private _setupLocationBadge(): void {
-    const select = this.element.querySelector<HTMLSelectElement>('#wizard-location');
+    this._updateLocationBadge();
+  }
+
+  private _updateLocationBadge(): void {
     const badge = this.element.querySelector<HTMLElement>('#wizard-index-status');
     const continueBtn = this.element.querySelector<HTMLButtonElement>('#wizard-continue-btn');
     const enrichmentBtn = this.element.querySelector<HTMLButtonElement>('#wizard-enrichment-btn');
-    if (!select) return;
+
+    // A form is "complete" when all required fields have a value.
+    const fields = this._parser.getSettingInformation();
+    const hasValue = fields
+      .filter((f) => f.required !== false)
+      .every((f) => !!this._parserFormValues[f.key]);
+
+    if (continueBtn) continueBtn.disabled = !hasValue;
 
     const hasGlobalIndex = enrichmentBtn?.dataset.hasGlobalIndex === 'true';
 
-    const update = (): void => {
-      const opt = select.options[select.selectedIndex];
-      const hasValue = !!opt?.value;
+    if (!hasValue) {
+      if (badge) badge.innerHTML = '';
+      if (enrichmentBtn && !hasGlobalIndex) enrichmentBtn.style.display = 'none';
+      return;
+    }
 
-      if (continueBtn) continueBtn.disabled = !hasValue;
+    const hasIndex = this._detectIndexStatusFor() === 'exists';
 
-      if (!hasValue) {
-        if (badge) badge.innerHTML = '';
-        if (enrichmentBtn && !hasGlobalIndex) enrichmentBtn.style.display = 'none';
-        return;
-      }
+    if (badge) {
+      badge.innerHTML = hasIndex
+        ? `<div class="lw-alert lw-alert--info" style="margin-top:.75rem">` +
+          `<i class="fas fa-circle-info"></i> Continuing will rebuild the existing index.</div>`
+        : `<div class="lw-alert lw-alert--info" style="margin-top:.75rem">` +
+          `<i class="fas fa-circle-info"></i> No lore index found. Continuing will build one.</div>`;
+    }
 
-      const hasIndex = this._detectIndexStatusFor() === 'exists';
+    if (continueBtn) {
+      continueBtn.innerHTML = hasIndex
+        ? 'Rebuild <i class="fas fa-arrow-right"></i>'
+        : 'Continue <i class="fas fa-arrow-right"></i>';
+    }
 
-      if (badge) {
-        badge.innerHTML = hasIndex
-          ? `<div class="lw-alert lw-alert--info" style="margin-top:.75rem">` +
-            `<i class="fas fa-circle-info"></i> Continuing will rebuild the existing index.</div>`
-          : `<div class="lw-alert lw-alert--info" style="margin-top:.75rem">` +
-            `<i class="fas fa-circle-info"></i> No lore index found. Continuing will build one.</div>`;
-      }
-
-      if (continueBtn) {
-        continueBtn.innerHTML = hasIndex
-          ? 'Rebuild <i class="fas fa-arrow-right"></i>'
-          : 'Continue <i class="fas fa-arrow-right"></i>';
-      }
-
-      if (enrichmentBtn) {
-        enrichmentBtn.style.display = hasIndex ? '' : 'none';
-      }
-    };
-
-    select.addEventListener('change', update);
-    update();
+    if (enrichmentBtn) {
+      enrichmentBtn.style.display = hasIndex ? '' : 'none';
+    }
   }
 
   // ---------------------------------------------------------------------------
@@ -364,14 +347,13 @@ export class LoreIndexWizard extends foundry.applications.api.HandlebarsApplicat
     return {
       phaseTitle: this._phaseTitle(),
       hasAnyLoreIndex: this._hasAnyLoreIndex(),
-      locationName: this._selectedLocation?.name ?? '',
-      locationType: this._selectedLocation?.type ?? 'folder',
-      locations: this._collectLocations(),
-      mixedFolders: this._mixedFolders,
-      mixedJournals: this._mixedJournals,
+      locationName: this._locationName(),
+      parserFields: this._parser.getSettingInformation(),
+      parserFormValues: this._parserFormValues,
       chapters: this._chapters.map(
         (c): ChapterCandidateView => ({
           ...c,
+          sourceType: (c.data as any)?.sourceType ?? '',
           roleIsOverview: c.role === 'overview',
           roleIsChapter: c.role === 'chapter',
           roleIsSkip: c.role === 'skip',
@@ -400,8 +382,15 @@ export class LoreIndexWizard extends foundry.applications.api.HandlebarsApplicat
     };
   }
 
+  private _locationName(): string {
+    const loc = JournalParser.decodeLocation(this._parserFormValues);
+    if (!loc) return '';
+    if (loc.type === 'folder') return (game.folders as any)?.get(loc.id)?.name ?? '';
+    return (game.journal as any)?.get(loc.id)?.name ?? '';
+  }
+
   private _phaseTitle(): string {
-    const name = this._selectedLocation?.name ?? '';
+    const name = this._locationName();
     const suffix = name ? `: ${name}` : '';
     if (this._step === 'location') return '';
     if (this._step === 'enriching' || (this._step === 'model' && this._modelContext === 'vision')) {
@@ -485,18 +474,6 @@ export class LoreIndexWizard extends foundry.applications.api.HandlebarsApplicat
   // Location helpers
   // ---------------------------------------------------------------------------
 
-  private _collectLocations(): LocationItem[] {
-    const folders: LocationItem[] = (
-      (game.folders as any)?.filter((f: any) => f.type === 'JournalEntry' && !f.folder) ?? []
-    ).map((f: any) => ({ id: f.id as string, name: f.name as string, type: 'folder' as const }));
-
-    const journals: LocationItem[] = (
-      (game.journal as any)?.filter((j: any) => !j.folder) ?? []
-    ).map((j: any) => ({ id: j.id as string, name: j.name as string, type: 'journal' as const }));
-
-    return [...folders, ...journals];
-  }
-
   private _detectIndexStatusFor(): IndexStatus {
     const modFolder = (game.folders as any)?.find(
       (f: any) => f.name === MODULE_FOLDER_NAME && f.type === 'JournalEntry',
@@ -511,11 +488,6 @@ export class LoreIndexWizard extends foundry.applications.api.HandlebarsApplicat
     if (!loreFolder) return 'none';
     const hasJournals = (game.journal as any)?.some((j: any) => j.folder?.id === loreFolder.id);
     return hasJournals ? 'exists' : 'none';
-  }
-
-  private _resolveLocationName(id: string, type: 'folder' | 'journal'): string {
-    if (type === 'folder') return (game.folders as any)?.get(id)?.name ?? id;
-    return (game.journal as any)?.get(id)?.name ?? id;
   }
 
   // ---------------------------------------------------------------------------
@@ -578,24 +550,7 @@ export class LoreIndexWizard extends foundry.applications.api.HandlebarsApplicat
   // ---------------------------------------------------------------------------
 
   private _runChapterDetection(): void {
-    if (!this._selectedLocation) return;
-
-    const result = this._detector.detect(this._selectedLocation.id, this._selectedLocation.type);
-
-    if (result.isMixed) {
-      this._mixedFolders = result.subfolders;
-      this._mixedJournals = result.journals;
-      this._goToStep('mixed');
-      return;
-    }
-
-    this._chapters = result.candidates;
-    this._goToStep('chapters');
-  }
-
-  private _applyMixedChoice(candidates: ChapterCandidate[]): void {
-    flagIntroCandidate(candidates);
-    this._chapters = candidates;
+    this._chapters = this._parser.detectChapters(this._parserFormValues);
     this._goToStep('chapters');
   }
 
@@ -624,37 +579,29 @@ export class LoreIndexWizard extends foundry.applications.api.HandlebarsApplicat
   // ---------------------------------------------------------------------------
 
   static async _onContinueFromLocation(this: LoreIndexWizard): Promise<void> {
-    const select = this.element.querySelector('#wizard-location') as HTMLSelectElement;
-    const opt = select?.options[select.selectedIndex];
-    if (!opt?.value) {
-      ui.notifications.warn('Select an adventure location to continue.');
+    // Read current values from all parser form fields
+    const fields = this._parser.getSettingInformation();
+    for (const field of fields) {
+      const el = this.element.querySelector<HTMLSelectElement | HTMLInputElement>(
+        `#parser-field-${field.key}`,
+      );
+      if (el) this._parserFormValues = { ...this._parserFormValues, [field.key]: el.value };
+    }
+
+    const hasRequired = fields
+      .filter((f) => f.required !== false)
+      .every((f) => !!this._parserFormValues[f.key]);
+    if (!hasRequired) {
+      ui.notifications.warn('Fill in all required fields to continue.');
       return;
     }
 
-    const type = (opt.dataset.type ?? 'folder') as 'folder' | 'journal';
-    this._selectedLocation = {
-      id: opt.value,
-      type,
-      name: this._resolveLocationName(opt.value, type),
-    };
     this._indexStatus = this._detectIndexStatusFor();
     this._runChapterDetection();
   }
 
   static async _onBackToLocation(this: LoreIndexWizard): Promise<void> {
     this._goToStep('location');
-  }
-
-  static async _onUseMixedFolders(this: LoreIndexWizard): Promise<void> {
-    this._applyMixedChoice(this._mixedFolders);
-  }
-
-  static async _onUseMixedJournals(this: LoreIndexWizard): Promise<void> {
-    this._applyMixedChoice(this._mixedJournals);
-  }
-
-  static async _onUseMixedBoth(this: LoreIndexWizard): Promise<void> {
-    this._applyMixedChoice([...this._mixedFolders, ...this._mixedJournals]);
   }
 
   static async _onConfirmChapters(this: LoreIndexWizard): Promise<void> {
@@ -693,6 +640,21 @@ export class LoreIndexWizard extends foundry.applications.api.HandlebarsApplicat
   // ---------------------------------------------------------------------------
   // Actions — indexing pass
   // ---------------------------------------------------------------------------
+
+  static async _onPreviewSource(this: LoreIndexWizard): Promise<void> {
+    const chapter = this._runner.currentChapter;
+    if (!chapter) return;
+
+    const content = this._parser.parseContent(chapter as ParsedChapter<JournalChapterData>);
+    const preview = content || '(no content found)';
+    const escaped = preview.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    new (Dialog as any)({
+      title: `Source Preview — ${chapter.name}`,
+      content: `<pre style="white-space:pre-wrap;font-size:.7em;max-height:500px;overflow-y:auto;background:var(--color-bg);padding:.5rem">${escaped}</pre>`,
+      buttons: { close: { label: 'Close' } },
+      default: 'close',
+    }).render(true);
+  }
 
   static async _onStartIndexing(this: LoreIndexWizard): Promise<void> {
     const queue = this._chapters.filter((c) => c.role === 'chapter');
@@ -766,15 +728,14 @@ export class LoreIndexWizard extends foundry.applications.api.HandlebarsApplicat
   }
 
   static async _onGoToEnrichmentFromLocation(this: LoreIndexWizard): Promise<void> {
-    const select = this.element.querySelector<HTMLSelectElement>('#wizard-location');
-    const opt = select?.options[select.selectedIndex];
-    if (!opt?.value) return;
-    const type = (opt.dataset.type ?? 'folder') as 'folder' | 'journal';
-    this._selectedLocation = {
-      id: opt.value,
-      type,
-      name: this._resolveLocationName(opt.value, type),
-    };
+    // Read current parser form values from DOM
+    const fields = this._parser.getSettingInformation();
+    for (const field of fields) {
+      const el = this.element.querySelector<HTMLSelectElement | HTMLInputElement>(
+        `#parser-field-${field.key}`,
+      );
+      if (el) this._parserFormValues = { ...this._parserFormValues, [field.key]: el.value };
+    }
     this._enrichmentEntryPoint = 'location';
     await LoreIndexWizard._openVisionModelStep.call(this);
   }
@@ -792,10 +753,12 @@ export class LoreIndexWizard extends foundry.applications.api.HandlebarsApplicat
       await this._fetchModels();
     }
     try {
+      const loc = JournalParser.decodeLocation(this._parserFormValues);
+      const chapterData = this._chapters.map((c) => c.data as JournalChapterData);
       const scenes = this._createBuilder().collectEnrichmentScenes(
-        this._chapters,
-        this._selectedLocation!.id,
-        this._selectedLocation!.type,
+        chapterData,
+        loc?.id ?? '',
+        loc?.type ?? 'folder',
       );
       this._estimatedEnrichmentScenes = scenes.length;
     } catch {
@@ -810,15 +773,13 @@ export class LoreIndexWizard extends foundry.applications.api.HandlebarsApplicat
   }
 
   static async _onStartEnrichment(this: LoreIndexWizard): Promise<void> {
-    if (!this._selectedLocation) {
+    const loc = JournalParser.decodeLocation(this._parserFormValues);
+    if (!loc) {
       (ui as any).notifications.warn('No adventure location selected.');
       return;
     }
-    const scenes = this._createBuilder().collectEnrichmentScenes(
-      this._chapters,
-      this._selectedLocation.id,
-      this._selectedLocation.type,
-    );
+    const chapterData = this._chapters.map((c) => c.data as JournalChapterData);
+    const scenes = this._createBuilder().collectEnrichmentScenes(chapterData, loc.id, loc.type);
     this._enrichmentSelectedImageUrl = '';
     this._enrichmentRunner.start(scenes);
     this._goToStep('enriching');
@@ -878,8 +839,10 @@ export class LoreIndexWizard extends foundry.applications.api.HandlebarsApplicat
     this.render({ force: true });
 
     try {
+      const content = this._parser.parseContent(chapter as ParsedChapter<JournalChapterData>);
       const sceneCount = await this._createBuilder().indexChapter(
-        chapter,
+        chapter.name,
+        content,
         this._indexingCallOptions(),
         (line) => this._addLogLine(line),
       );
@@ -903,7 +866,9 @@ export class LoreIndexWizard extends foundry.applications.api.HandlebarsApplicat
     try {
       const builder = this._createBuilder();
       const overviewContent = this._runner.overviewChapter
-        ? builder.collectChapterContent(this._runner.overviewChapter)
+        ? this._parser.parseContent(
+            this._runner.overviewChapter as ParsedChapter<JournalChapterData>,
+          )
         : undefined;
       await builder.indexOverview(overviewContent, this._indexingCallOptions());
       this._runner.overviewComplete();

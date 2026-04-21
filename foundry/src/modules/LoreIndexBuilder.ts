@@ -7,7 +7,7 @@ import {
 import { AiService, CallOptions } from '../services/AiService.js';
 import { GameData } from './ContextBuilder.js';
 import { JournalApi } from './JournalApi.js';
-import { ChapterCandidate } from './ChapterDetector.js';
+import { ChapterCandidate, ChapterContentParser } from './JournalParser/index.js';
 import { stripHtml, escapeHtml, unescapeHtml } from './loreIndexUtils.js';
 import type { EnrichmentScene, NamedImage } from './EnrichmentPassRunner.js';
 
@@ -45,56 +45,28 @@ export class LoreIndexBuilder {
   }
 
   /**
-   * Collect and format the source text for a single chapter candidate.
-   * Public so callers (e.g. LoreIndexWizard) can pass content to `indexOverview`.
-   */
-  collectChapterContent(chapter: ChapterCandidate): string {
-    if (chapter.sourceType === 'folder') {
-      return this._formatPagesForContext(this._collectPages(chapter.id));
-    }
-    if (chapter.sourceType === 'journal') {
-      const journal = (this.#game as any).journal?.find((j: any) => j.id === chapter.id);
-      if (!journal) return '';
-      const pages = (journal.pages.contents as any[])
-        .map((p: any) => ({
-          journalName: journal.name as string,
-          pageName: p.name as string,
-          content: stripHtml(p.text?.content ?? '').trim(),
-        }))
-        .filter((p) => p.content);
-      return this._formatPagesForContext(pages);
-    }
-    if (chapter.sourceType === 'header') {
-      // id format: "${journalId}::h::${index}"
-      const parts = chapter.id.split('::h::');
-      if (parts.length !== 2) return '';
-      return this._collectHeaderContent(parts[0], parseInt(parts[1], 10));
-    }
-    return '';
-  }
-
-  /**
    * Index a single chapter: streams AI output, parses sentinel-delimited blocks,
    * and writes `Chapter: <name>` + `Scene: <name>` pages incrementally as each
    * block closes.
    *
-   * @param chapter     The chapter candidate to index.
-   * @param callOptions Model / token options passed to the AI service.
-   * @param onProgress  Callback invoked for each log line (scene written, etc.).
-   * @returns           Number of scenes written.
+   * @param chapterName  Name used for the journal page.
+   * @param content      Pre-parsed markdown — produced by AdventureParser.parseContent.
+   * @param callOptions  Model / token options passed to the AI service.
+   * @param onProgress   Callback invoked for each log line (scene written, etc.).
+   * @returns            Number of scenes written.
    */
   async indexChapter(
-    chapter: ChapterCandidate,
+    chapterName: string,
+    content: string,
     callOptions: CallOptions,
     onProgress: (line: string) => void,
   ): Promise<number> {
-    const loreFolder = await this._ensureLoreIndexFolder();
-    const chapterJournal = await this._ensureChapterJournal(chapter.name, loreFolder.id);
-
-    const content = this.collectChapterContent(chapter);
     if (!content.trim()) {
-      throw new Error(`No content found for chapter: "${chapter.name}"`);
+      throw new Error(`No content found for chapter: "${chapterName}"`);
     }
+
+    const loreFolder = await this._ensureLoreIndexFolder();
+    const chapterJournal = await this._ensureChapterJournal(chapterName, loreFolder.id);
 
     const systemPrompt = `You are a lore indexer for a tabletop RPG adventure.
 You will receive the raw content of one adventure chapter and produce a structured index.
@@ -155,6 +127,11 @@ Use short prose or a brief bullet list.
 (one #### header per area, using the exact identifier from the source;
 if the source has no explicit identifiers, use a short descriptive heading)
 
+AREA HEADING RULES:
+- If the source area name starts with the scene name followed by a separator (—, :, -, /, etc.), strip the scene name prefix. Write only the remainder as the area heading. For example, if the scene is "Cragmaw Hideout" and the source says "Cragmaw Hideout — Cave Mouth", write "#### Cave Mouth" not "#### Cragmaw Hideout — Cave Mouth".
+- Only create area entries for actual physical sub-locations (rooms, chambers, buildings, outdoor zones). Skip general feature or rule sections such as "Ceilings", "Lighting", "Doors", "Random Encounters", "Wandering Monsters" — fold any tactically relevant content from those into the scene summary instead.
+- Do not create an area entry whose heading is the same as the scene name. If the whole scene has no sub-areas, write the scene summary only.
+
 Rules:
 - A scene is a distinct location or narrative beat — not every section heading is a scene.
 - Write neutrally — no visited/unvisited framing.
@@ -162,7 +139,7 @@ Rules:
 - Do not invent scenes, NPCs, or locations not in the source.
 - Output exactly one ---CHAPTER: ...--- block followed by one ---SCENE: ...--- block per scene.`;
 
-    const userPrompt = `Index this chapter:\n\n${content}\n\nBegin with ---CHAPTER: ${chapter.name}---`;
+    const userPrompt = `Index this chapter:\n\n${content}\n\nBegin with ---CHAPTER: ${chapterName}---`;
 
     // Write placeholder Summary page first so it appears as the first page in the journal
     await JournalApi.writeJournalPage(chapterJournal.id, {
@@ -353,29 +330,6 @@ Rules:
       }
     }
     return summaries;
-  }
-
-  private _collectHeaderContent(journalId: string, headerIndex: number): string {
-    const journal = (this.#game as any).journal?.find((j: any) => j.id === journalId);
-    if (!journal) return '';
-
-    const allHtml = (journal.pages.contents as any[])
-      .map((p: any) => p.text?.content ?? '')
-      .join('\n');
-
-    const sections: string[] = [];
-    let current: string | null = null;
-    for (const part of allHtml.split(/(<h[12][^>]*>[\s\S]*?<\/h[12]>)/gi)) {
-      if (/^<h[12]/i.test(part)) {
-        if (current !== null) sections.push(current);
-        current = part;
-      } else if (current !== null) {
-        current += part;
-      }
-    }
-    if (current !== null) sections.push(current);
-
-    return sections[headerIndex] ? stripHtml(sections[headerIndex]) : '';
   }
 
   // ---------------------------------------------------------------------------
@@ -578,8 +532,8 @@ Symmetric connections are written once. Write nothing else — no prose, no head
     } else if (chapter.sourceType === 'journal') {
       const j = (this.#game as any).journal?.find((j: any) => j.id === chapter.id);
       if (j) journals.push(j);
-    } else if (chapter.sourceType === 'header') {
-      const journalId = chapter.id.split('::h::')[0];
+    } else if (chapter.sourceType === 'page') {
+      const journalId = chapter.id.split('::page::')[0];
       const j = (this.#game as any).journal?.find((j: any) => j.id === journalId);
       if (j) journals.push(j);
     }
@@ -711,47 +665,25 @@ Symmetric connections are written once. Write nothing else — no prose, no head
       throw new Error(`Adventure folder not found: "${adventureFolder}"`);
     }
 
-    const pages = this._collectPages(advFolder.id);
-    if (!pages.length) {
+    const fakeChapter: ChapterCandidate = {
+      id: advFolder.id,
+      name: advFolder.name,
+      sourceType: 'folder',
+      role: 'chapter',
+      tokens: 0,
+    };
+    const content = new ChapterContentParser(this.#game).parse(fakeChapter);
+    if (!content.trim()) {
       throw new Error(`No journal pages found in adventure folder: "${adventureFolder}"`);
     }
 
-    console.log(`[Lore Index] Found ${pages.length} pages. Sending to AI service...`);
+    console.log(`[Lore Index] Sending content to AI service...`);
 
-    const index = await this._generateIndex(this._formatPagesForContext(pages));
+    const index = await this._generateIndex(content);
     await this._writeIndex(index);
 
     console.log(`[Lore Index] Successfully built and saved index.`);
     return index;
-  }
-
-  private _collectPages(
-    folderId: string,
-  ): Array<{ journalName: string; pageName: string; content: string }> {
-    const pages: Array<{ journalName: string; pageName: string; content: string }> = [];
-
-    const journals = this.#game.journal?.filter((j) => j.folder?.id === folderId) ?? [];
-    for (const journal of journals) {
-      for (const page of journal.pages.contents) {
-        const content = stripHtml(page.text?.content ?? '').trim();
-        if (content) pages.push({ journalName: journal.name, pageName: page.name, content });
-      }
-    }
-
-    const subfolders =
-      this.#game.folders?.filter((f) => f.folder?.id === folderId && f.type === 'JournalEntry') ??
-      [];
-    for (const subfolder of subfolders) {
-      pages.push(...this._collectPages(subfolder.id));
-    }
-
-    return pages;
-  }
-
-  private _formatPagesForContext(
-    pages: Array<{ journalName: string; pageName: string; content: string }>,
-  ): string {
-    return pages.map((p) => `## ${p.journalName} — ${p.pageName}\n${p.content}`).join('\n\n');
   }
 
   private async _generateIndex(contentToIndex: string): Promise<string> {

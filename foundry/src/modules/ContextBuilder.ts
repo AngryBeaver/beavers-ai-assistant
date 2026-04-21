@@ -14,7 +14,7 @@ const LORE_CHAR_BUDGET = 4000 * 4; // ~4 000 tokens
 export interface SceneData {
   name: string;
   description?: string;
-  notes?: Array<{ journalEntryId?: string }>;
+  notes?: Array<{ journalEntryId?: string; pageId?: string; text?: string }>;
 }
 
 export interface ActorData {
@@ -27,6 +27,7 @@ export interface ActorData {
 }
 
 export interface JournalPageData {
+  id?: string;
   name: string;
   text?: { content?: string; markdown?: string; format?: number };
 }

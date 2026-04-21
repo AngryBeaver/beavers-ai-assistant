@@ -5,7 +5,7 @@ import {
   GameAccessor,
   FolderLike,
   JournalLike,
-} from '../modules/ChapterDetector.js';
+} from '../modules/JournalParser/index.js';
 
 // ---------------------------------------------------------------------------
 // Test helpers

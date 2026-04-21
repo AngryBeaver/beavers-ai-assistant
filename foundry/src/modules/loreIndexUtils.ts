@@ -45,13 +45,15 @@ function convertList(listInner: string, ordered: boolean): string {
   return items.length ? '\n' + items.join('\n') + '\n' : '';
 }
 
-export function stripHtml(html: string): string {
+export function stripHtml(html: string, h1Level = 3): string {
+  const h = (n: number): string => '#'.repeat(Math.min(h1Level + n - 1, 6));
   return html
-    .replace(/<h1[^>]*>(.*?)<\/h1>/gi, '\n### $1\n')
-    .replace(/<h2[^>]*>(.*?)<\/h2>/gi, '\n#### $1\n')
-    .replace(/<h3[^>]*>(.*?)<\/h3>/gi, '\n##### $1\n')
-    .replace(/<h4[^>]*>(.*?)<\/h4>/gi, '\n###### $1\n')
-    .replace(/<h5[^>]*>(.*?)<\/h5>/gi, '\n####### $1\n')
+    .replace(/<h1[^>]*>(.*?)<\/h1>/gi, (_, t) => `\n${h(1)} ${t}\n`)
+    .replace(/<h2[^>]*>(.*?)<\/h2>/gi, (_, t) => `\n${h(2)} ${t}\n`)
+    .replace(/<h3[^>]*>(.*?)<\/h3>/gi, (_, t) => `\n${h(3)} ${t}\n`)
+    .replace(/<h4[^>]*>(.*?)<\/h4>/gi, (_, t) => `\n${h(4)} ${t}\n`)
+    .replace(/<h5[^>]*>(.*?)<\/h5>/gi, (_, t) => `\n${h(5)} ${t}\n`)
+    .replace(/<h6[^>]*>(.*?)<\/h6>/gi, (_, t) => `\n${h(6)} ${t}\n`)
     .replace(/<table[^>]*>([\s\S]*?)<\/table>/gi, (_, inner) => convertTable(inner))
     .replace(/<ol[^>]*>([\s\S]*?)<\/ol>/gi, (_, inner) => convertList(inner, true))
     .replace(/<ul[^>]*>([\s\S]*?)<\/ul>/gi, (_, inner) => convertList(inner, false))
@@ -145,6 +147,63 @@ function _mediaTypeFromUrl(url: string): string {
     webp: 'image/webp',
   };
   return map[ext] ?? 'image/jpeg';
+}
+
+// ---------------------------------------------------------------------------
+// Foundry markup cleaner
+// ---------------------------------------------------------------------------
+
+/**
+ * Remove or simplify Foundry-specific inline markup so the AI sees plain text.
+ *
+ * Rules applied in order:
+ *   @Embed[...]           → removed
+ *   @Tag[...]{Label}      → Label
+ *   @Tag[...]             → removed (no display text)
+ *   &amp;Reference[...]{Label} / &Reference[...]{Label} → Label
+ *   [[/check ...]]        → (Skill DC N)
+ *   [[/save ...]]         → (Ability save DC N)
+ *   [[/...]]              → removed
+ */
+export function cleanFoundryMarkup(text: string): string {
+  return (
+    text
+      // @Embed[...] — always remove (no useful display text)
+      .replace(/@Embed\[[^\]]*\](?:\{[^}]*\})?/g, '')
+      // @Tag[...]{Label} — keep label only
+      .replace(/@\w+(?:\.\w+)*\[[^\]]*\]\{([^}]*)\}/g, '$1')
+      // @Tag[...] with no label — remove
+      .replace(/@\w+(?:\.\w+)*\[[^\]]*\]/g, '')
+      // @Compendium.dotted.path{Label} — keep label only
+      .replace(/@[\w.]+\{([^}]*)\}/g, '$1')
+      // &amp;Reference[...]{Label} or &Reference[...]{Label} — keep label
+      .replace(/&amp;Reference\[[^\]]*\]\{([^}]*)\}/g, '$1')
+      .replace(/&Reference\[[^\]]*\]\{([^}]*)\}/g, '$1')
+      // [[/check skill=X dc=N ...]] → (X DC N)
+      .replace(/\[\[\/check\b([^\]]*)\]\]/gi, (_, args) => {
+        const skill = args.match(/\bskill=(\S+)/i)?.[1] ?? '';
+        const dc = args.match(/\bdc=(\d+)/i)?.[1] ?? '';
+        const label = skill
+          ? `${skill.charAt(0).toUpperCase()}${skill.slice(1)} DC ${dc}`
+          : `DC ${dc}`;
+        return `(${label})`;
+      })
+      // [[/save ability=X dc=N ...]] → (X save DC N)
+      .replace(/\[\[\/save\b([^\]]*)\]\]/gi, (_, args) => {
+        const ability = args.match(/\bability=(\S+)/i)?.[1] ?? '';
+        const dc = args.match(/\bdc=(\d+)/i)?.[1] ?? '';
+        const label = ability
+          ? `${ability.charAt(0).toUpperCase()}${ability.slice(1)} save DC ${dc}`
+          : `save DC ${dc}`;
+        return `(${label})`;
+      })
+      // Any remaining [[/...]] — remove
+      .replace(/\[\[\/[^\]]*\]\]/g, '')
+      // Collapse extra whitespace left by removals
+      .replace(/[^\S\n]+/g, ' ')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim()
+  );
 }
 
 // ---------------------------------------------------------------------------

@@ -7,22 +7,36 @@
   {{/if}}
 
   <p style="margin-top:0">
-    Select the folder or journal that contains your adventure content.
+    Select the adventure content to index.
   </p>
 
+  {{!-- Render parser form fields dynamically --}}
+  {{#each parserFields}}
   <div class="form-group">
-    <label for="wizard-location">Adventure Content:</label>
+    <label for="parser-field-{{this.key}}">{{this.label}}:</label>
     <div class="form-fields">
-      <select id="wizard-location" style="width:100%">
-        <option value="">(select…)</option>
-        {{#each locations}}
-          <option value="{{id}}" data-type="{{type}}">
-            {{#if (eq type "folder")}}[Folder]{{else}}[Journal]{{/if}} {{name}}
-          </option>
+      {{#if (eq this.type "select")}}
+      <select id="parser-field-{{this.key}}" name="parser-field-{{this.key}}" style="width:100%">
+        <option value="">{{#if this.placeholder}}{{this.placeholder}}{{else}}(select…){{/if}}</option>
+        {{#each this.options}}
+        <option value="{{this.value}}"
+          {{#if (eq this.value (lookup ../../../parserFormValues ../key))}}selected{{/if}}>
+          {{this.label}}
+        </option>
         {{/each}}
       </select>
+      {{else if (eq this.type "password")}}
+      <input type="password" id="parser-field-{{this.key}}" name="parser-field-{{this.key}}"
+             value="{{lookup ../parserFormValues this.key}}"
+             placeholder="{{this.placeholder}}">
+      {{else}}
+      <input type="text" id="parser-field-{{this.key}}" name="parser-field-{{this.key}}"
+             value="{{lookup ../parserFormValues this.key}}"
+             placeholder="{{this.placeholder}}">
+      {{/if}}
     </div>
   </div>
+  {{/each}}
 
   {{!-- Per-selection status badge (updated by JS) --}}
   <div id="wizard-index-status"></div>

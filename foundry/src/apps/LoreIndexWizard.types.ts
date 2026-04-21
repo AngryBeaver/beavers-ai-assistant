@@ -1,5 +1,6 @@
 import type { AiProvider } from '../definitions.js';
-import type { ChapterCandidate } from '../modules/ChapterDetector.js';
+import type { ParsedChapter, ChapterRole, ParserFormField } from '../modules/AdventureParser.js';
+import type { JournalChapterData } from '../modules/JournalParser/index.js';
 import type { IndexingPhase } from '../modules/IndexingPassRunner.js';
 import type { EnrichmentPhase, NamedImage } from '../modules/EnrichmentPassRunner.js';
 
@@ -7,29 +8,27 @@ import type { EnrichmentPhase, NamedImage } from '../modules/EnrichmentPassRunne
 // Location step
 // ---------------------------------------------------------------------------
 
-export interface LocationItem {
-  id: string;
-  name: string;
-  type: 'folder' | 'journal';
-}
+export type { ParserFormField };
 
 // ---------------------------------------------------------------------------
 // Chapters step
 // ---------------------------------------------------------------------------
 
-/** ChapterCandidate extended with pre-computed booleans for Handlebars. */
-export interface ChapterCandidateView extends ChapterCandidate {
+/** ParsedChapter extended with pre-computed booleans for Handlebars. */
+export interface ChapterCandidateView extends ParsedChapter<JournalChapterData> {
   roleIsOverview: boolean;
   roleIsChapter: boolean;
   roleIsSkip: boolean;
   showOverviewOption: boolean;
+  /** Source type extracted from data — for icon display in the template. */
+  sourceType: string;
 }
 
 // ---------------------------------------------------------------------------
 // Wizard navigation
 // ---------------------------------------------------------------------------
 
-export type WizardStep = 'location' | 'mixed' | 'chapters' | 'model' | 'indexing' | 'enriching';
+export type WizardStep = 'location' | 'chapters' | 'model' | 'indexing' | 'enriching';
 export type IndexStatus = 'none' | 'exists';
 export type ModelContext = 'indexing' | 'vision';
 
@@ -37,7 +36,6 @@ export type ModelContext = 'indexing' | 'vision';
 // Indexing step view model
 // ---------------------------------------------------------------------------
 
-/** Read-only view model passed to indexing.hbs. Built from IndexingPassRunner state. */
 export interface IndexingCtx {
   phase: IndexingPhase;
   chapterName: string;
@@ -51,7 +49,6 @@ export interface IndexingCtx {
   completedCount: number;
   sceneCount: number;
   error: string | null;
-  // Phase booleans for Handlebars {{#if}} conditionals
   isPreChapter: boolean;
   isAlreadyIndexed: boolean;
   isRunning: boolean;
@@ -87,16 +84,12 @@ export interface EnrichmentCtx {
 // ---------------------------------------------------------------------------
 
 export interface WizardContext {
-  // Common
-  phaseTitle: string; // "Indexing: Adventure Name" or "Map Enrichment: Adventure Name"
-  hasAnyLoreIndex: boolean; // true if the lore index journal exists with any pages
+  phaseTitle: string;
+  hasAnyLoreIndex: boolean;
   locationName: string;
-  locationType: 'folder' | 'journal';
   // Location step
-  locations: LocationItem[];
-  // Mixed step
-  mixedFolders: ChapterCandidate[];
-  mixedJournals: ChapterCandidate[];
+  parserFields: ParserFormField[];
+  parserFormValues: Record<string, string>;
   // Chapters step
   chapters: ChapterCandidateView[];
   // Model step
