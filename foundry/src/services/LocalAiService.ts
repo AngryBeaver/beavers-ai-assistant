@@ -11,6 +11,14 @@ export class LocalAiService implements AiService {
     );
   }
 
+  private _noThink(options?: CallOptions): boolean {
+    return !options?.reasoning_effort || options.reasoning_effort === 'none';
+  }
+
+  private _systemPrompt(systemPrompt: string, options?: CallOptions): string {
+    return this._noThink(options) ? `/no_think\n${systemPrompt}` : systemPrompt;
+  }
+
   private model(options?: CallOptions): string {
     return (
       options?.model ||
@@ -30,7 +38,7 @@ export class LocalAiService implements AiService {
         temperature: options?.temperature ?? 0.7,
         ...(options?.reasoning_effort ? { reasoning_effort: options.reasoning_effort } : {}),
         messages: [
-          { role: 'system', content: systemPrompt },
+          { role: 'system', content: this._systemPrompt(systemPrompt, options) },
           { role: 'user', content: userPrompt },
         ],
       }),
@@ -141,7 +149,7 @@ export class LocalAiService implements AiService {
         stream: true,
         ...(options?.reasoning_effort ? { reasoning_effort: options.reasoning_effort } : {}),
         messages: [
-          { role: 'system', content: systemPrompt },
+          { role: 'system', content: this._systemPrompt(systemPrompt, options) },
           { role: 'user', content: userPrompt },
         ],
       }),
