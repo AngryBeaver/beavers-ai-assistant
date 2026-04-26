@@ -1,6 +1,10 @@
 import { ChapterCandidate } from './ChapterDetector.js';
 import { GameData } from '../ContextBuilder.js';
 import { stripHtml, cleanFoundryMarkup } from '../loreIndexUtils.js';
+import type { HeadingCandidate, SceneRole } from '../../apps/LoreIndexWizard.types.js';
+
+const INTRO_KEYWORDS =
+  /intro|introduction|preface|background|foreword|credits|appendix|prologue|about|overview|welcome|how to use|read first|getting started/i;
 
 /** True when the name already starts with an area code like "H1", "A2", "1.", "3b". */
 function _hasAreaCode(name: string): boolean {
@@ -17,6 +21,28 @@ function _hasAreaCode(name: string): boolean {
  */
 export class ChapterContentParser {
   constructor(private readonly game: GameData) {}
+
+  /**
+   * Extract only the top-level (`#`) headings from the parsed chapter markdown.
+   * These are the only candidates for scenes — sub-headings are content within a scene.
+   *
+   * Hierarchy reminder:
+   *   folder  → # = journal name, ## = page name, deeper = content
+   *   journal → # = page name, ## = content h1, deeper = content
+   *   page    → # = content h1, deeper = content
+   */
+  extractHeadings(chapter: ChapterCandidate): HeadingCandidate[] {
+    const raw = this.parse(chapter);
+    const results: HeadingCandidate[] = [];
+    for (const line of raw.split('\n')) {
+      const m = line.match(/^(#)\s+(.+)$/);
+      if (!m) continue;
+      const text = m[2].trim();
+      const role: SceneRole = INTRO_KEYWORDS.test(text) ? 'overview' : 'include';
+      results.push({ text, level: 1, role });
+    }
+    return results;
+  }
 
   parse(chapter: ChapterCandidate): string {
     switch (chapter.sourceType) {

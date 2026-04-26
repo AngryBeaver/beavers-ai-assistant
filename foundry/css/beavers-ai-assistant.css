@@ -248,24 +248,80 @@
   margin: -5px;
 }
 
+/* ── AI GM Window ─────────────────────────────────────────────────────────── */
+
+/* Pull the window-content padding out so our header can sit flush at the top */
+#beavers-ai-gm-window .window-content {
+  padding: 0;
+  overflow: hidden;
+}
+
 .beavers-ai-gm-window {
   display: flex;
   flex-direction: column;
-  gap: 0.75rem;
-  padding: 0.75rem;
 }
 
-/* Top-level controls row */
+/* Header: flush to top, gradient fading to the border, selects left-aligned */
+.beavers-ai-header {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  background: linear-gradient(to bottom,
+    rgba(0, 0, 0, 0.18) 0%,
+    rgba(0, 0, 0, 0.04) 100%);
+  border-bottom: 1px solid rgba(0, 0, 0, 0.30);
+  flex-shrink: 0;
+}
+
+.beavers-ai-header select {
+  /* natural width — keeps selects left-anchored, not stretched */
+  max-width: 48%;
+}
+
+/* Empty-state header (no adventure set up yet) */
+.beavers-ai-header--empty {
+  gap: 0.5rem;
+  font-size: 0.875em;
+}
+
+.beavers-ai-header--empty span { flex: 1; }
+
+.beavers-ai-header--empty button { white-space: nowrap; flex-shrink: 0; }
+
+/* Body: the area below the header, owns all the padding */
+.beavers-ai-body {
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* Bordered context box — ~400 px tall, scrollable, GM can read/type here */
+.beavers-ai-context {
+  width: 100%;
+  height: 400px;
+  box-sizing: border-box;
+  border: 1px solid var(--color-border-light-primary, #999);
+  border-radius: 4px;
+  padding: 0.6rem 0.75rem;
+  overflow-y: auto;
+  background: var(--color-bg-input, var(--color-bg, #000000));
+  resize: none;
+  font-family: inherit;
+  font-size: inherit;
+  color: inherit;
+}
+
+/* Controls row — sits directly below the context box */
 .beavers-ai-controls {
   display: flex;
-  align-items: flex-start;
   gap: 0.5rem;
   flex-wrap: wrap;
 }
 
-.beavers-ai-controls button {
-  white-space: nowrap;
-}
+.beavers-ai-controls button { white-space: nowrap; }
 
 /* Inline notice shown when Voice Transcript is disabled */
 .beavers-ai-vt-notice {
@@ -280,7 +336,15 @@
   line-height: 1.4;
 }
 
-/* Response area — populated in later steps */
-.beavers-ai-response {
-  min-height: 3rem;
+/* Response text streamed into the context box */
+.beavers-ai-response { white-space: pre-wrap; }
+
+/* NPC response header (name + optional spinner) */
+.beavers-ai-response-header {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-bottom: 0.4rem;
+  font-size: 0.9em;
+  opacity: 0.75;
 }

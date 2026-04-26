@@ -8,8 +8,12 @@ import { AiService, CallOptions } from '../services/AiService.js';
 import { GameData } from './ContextBuilder.js';
 import { JournalApi } from './JournalApi.js';
 import { ChapterCandidate, ChapterContentParser } from './JournalParser/index.js';
-import { stripHtml, escapeHtml, unescapeHtml } from './loreIndexUtils.js';
+import { stripHtml, unescapeHtml } from './loreIndexUtils.js';
 import type { EnrichmentScene, NamedImage } from './EnrichmentPassRunner.js';
+import type { LoreIndex, LoreChapter, LoreScene } from '../apps/LoreIndexWizard.types.js';
+
+const LORE_INDEX_RECORD_JOURNAL = '_index';
+const LORE_INDEX_RECORD_PAGE = 'index';
 
 /**
  * Builds a hierarchical lore index from adventure journal pages.
@@ -44,23 +48,125 @@ export class LoreIndexBuilder {
     return (journal.pages.contents as any[]).some((p: any) => p.name === 'Summary');
   }
 
+  // ---------------------------------------------------------------------------
+  // Structured lore index record (machine-readable JSON page)
+  // ---------------------------------------------------------------------------
+
+  async readIndex(): Promise<LoreIndex | null> {
+    const loreFolder = this._getLoreIndexFolder();
+    if (!loreFolder) return null;
+    const journal = (this.#game as any).journal?.find(
+      (j: any) => j.folder?.id === loreFolder.id && j.name === LORE_INDEX_RECORD_JOURNAL,
+    );
+    if (!journal) return null;
+    const page = (journal.pages.contents as any[]).find(
+      (p: any) => p.name === LORE_INDEX_RECORD_PAGE,
+    );
+    if (!page) return null;
+    try {
+      const raw = stripHtml(page.text?.content ?? '').trim();
+      return JSON.parse(raw) as LoreIndex;
+    } catch {
+      return null;
+    }
+  }
+
+  async writeIndex(index: LoreIndex): Promise<void> {
+    const loreFolder = await this._ensureLoreIndexFolder();
+    const journal =
+      (this.#game as any).journal?.find(
+        (j: any) => j.folder?.id === loreFolder.id && j.name === LORE_INDEX_RECORD_JOURNAL,
+      ) ??
+      (await (JournalEntry as any).create({
+        name: LORE_INDEX_RECORD_JOURNAL,
+        folder: loreFolder.id,
+      }));
+    await JournalApi.writeJournalPage(journal.id as string, {
+      name: LORE_INDEX_RECORD_PAGE,
+      type: 'text',
+      text: { content: `<pre>${JSON.stringify(index, null, 2)}</pre>`, format: 1 },
+    });
+  }
+
+  /**
+   * Get the markdown content of a scene either from the lore index page or
+   * by re-parsing from the adventure source (filtered to relevant headings).
+   */
+  getSceneContent(
+    sceneName: string,
+    loreScene: LoreScene,
+    loreChapter: LoreChapter,
+    mode: 'lore' | 'source',
+  ): string {
+    if (mode === 'lore') {
+      const journal = (this.#game as any).journal?.find(
+        (j: any) => j.id === loreChapter.loreJournalId,
+      );
+      if (!journal) return '';
+      const page = (journal.pages.contents as any[]).find(
+        (p: any) => p.id === loreScene.lorePageId,
+      );
+      if (!page) return '';
+      return stripHtml(page.text?.content ?? '').trim();
+    }
+
+    // Source mode: re-parse the chapter and filter to the scene's headings
+    const parser = new ChapterContentParser(this.#game);
+    const candidate: ChapterCandidate = {
+      id: loreChapter.sourceId,
+      name: loreChapter.sourceName,
+      sourceType: loreChapter.sourceType,
+      role: 'chapter',
+      tokens: 0,
+    };
+    const fullMd = parser.parse(candidate);
+    if (!loreScene.headings.length) return fullMd;
+
+    // Extract only the sections whose heading matches the scene's heading list
+    const lines = fullMd.split('\n');
+    const included: string[] = [];
+    let inSection = false;
+    let sectionLevel = 0;
+    for (const line of lines) {
+      const hm = line.match(/^(#{1,6})\s+(.+)$/);
+      if (hm) {
+        const lvl = hm[1].length;
+        const txt = hm[2].trim();
+        if (loreScene.headings.some((h) => h === txt)) {
+          inSection = true;
+          sectionLevel = lvl;
+          included.push(line);
+        } else if (inSection && lvl <= sectionLevel) {
+          inSection = false;
+        } else if (inSection) {
+          included.push(line);
+        }
+      } else if (inSection) {
+        included.push(line);
+      }
+    }
+    return included.join('\n').trim();
+  }
+
   /**
    * Index a single chapter: streams AI output, parses sentinel-delimited blocks,
    * and writes `Chapter: <name>` + `Scene: <name>` pages incrementally as each
    * block closes.
    *
-   * @param chapterName  Name used for the journal page.
-   * @param content      Pre-parsed markdown — produced by AdventureParser.parseContent.
-   * @param callOptions  Model / token options passed to the AI service.
-   * @param onProgress   Callback invoked for each log line (scene written, etc.).
-   * @returns            Number of scenes written.
+   * @param chapterName    Name used for the journal page.
+   * @param content        Pre-parsed markdown — produced by AdventureParser.parseContent.
+   * @param callOptions    Model / token options passed to the AI service.
+   * @param onProgress     Callback invoked for each log line (scene written, etc.).
+   * @param includeHints   Optional heading texts to focus on / skip (from scene step).
+   * @returns              Number of scenes written.
    */
   async indexChapter(
     chapterName: string,
     content: string,
     callOptions: CallOptions,
     onProgress: (line: string) => void,
-  ): Promise<number> {
+    includeHints?: { include: string[]; skip: string[]; overview: string[] },
+  ): Promise<{ sceneCount: number; sceneNames: string[]; journalId: string }> {
     if (!content.trim()) {
       throw new Error(`No content found for chapter: "${chapterName}"`);
     }
@@ -139,7 +245,24 @@ Rules:
 - Do not invent scenes, NPCs, or locations not in the source.
 - Output exactly one ---CHAPTER: ...--- block followed by one ---SCENE: ...--- block per scene.`;
 
-    const userPrompt = `Index this chapter:\n\n${content}\n\nBegin with ---CHAPTER: ${chapterName}---`;
+    const hintLines: string[] = [];
+    if (includeHints?.include.length) {
+      hintLines.push(
+        `Focus on these sections: ${includeHints.include.map((h) => `"${h}"`).join(', ')}.`,
+      );
+    }
+    if (includeHints?.overview.length) {
+      hintLines.push(
+        `Treat these as overview/background, not standalone scenes: ${includeHints.overview.map((h) => `"${h}"`).join(', ')}.`,
+      );
+    }
+    if (includeHints?.skip.length) {
+      hintLines.push(
+        `Skip these sections entirely: ${includeHints.skip.map((h) => `"${h}"`).join(', ')}.`,
+      );
+    }
+    const hintBlock = hintLines.length ? `\n\nGuidance:\n${hintLines.join('\n')}` : '';
+    const userPrompt = `Index this chapter:\n\n${content}${hintBlock}\n\nBegin with ---CHAPTER: ${chapterName}---`;
 
     // Write placeholder Summary page first so it appears as the first page in the journal
     await JournalApi.writeJournalPage(chapterJournal.id, {
@@ -158,6 +281,7 @@ Rules:
     let currentBlock: Block | null = null;
     let currentLines: string[] = [];
     let sceneCount = 0;
+    const sceneNames: string[] = [];
     let chapterSummary = '';
 
     const flushBlock = (block: Block, lines: string[]): void => {
@@ -172,6 +296,7 @@ Rules:
           });
           onProgress(`  ✓ Scene: ${name}`);
           sceneCount++;
+          sceneNames.push(name);
         });
       } else if (block.type === 'CHAPTER') {
         chapterSummary = text;
@@ -222,7 +347,7 @@ Rules:
       onProgress(`  ✓ Chapter summary written.`);
     }
 
-    return sceneCount;
+    return { sceneCount, sceneNames, journalId: chapterJournal.id as string };
   }
 
   /**
@@ -272,7 +397,7 @@ Rules:
     await JournalApi.writeJournalPage(overviewJournal.id, {
       name: 'Overview',
       type: 'text',
-      text: { content: `<div>${escapeHtml(overview)}</div>`, format: 1 },
+      text: { markdown: overview, format: 2 },
     });
   }
 
@@ -466,7 +591,7 @@ Symmetric connections are written once. Write nothing else — no prose, no head
     await JournalApi.writeJournalPage(sceneJournalId, {
       name: `Scene: ${sceneName}`,
       type: 'text',
-      text: { content: `<div>${escapeHtml(updatedText)}</div>`, format: 1 },
+      text: { markdown: updatedText, format: 2 },
     });
 
     onProgress(`  ✓ Connections written.`);
@@ -741,7 +866,7 @@ Produce the index as markdown. Start directly with ## Part 1 or ## World if ther
       const pageData = {
         name: 'Index',
         type: 'text' as const,
-        text: { content: `<div>${escapeHtml(indexContent)}</div>`, format: 1 as const },
+        text: { markdown: indexContent, format: 2 as const },
       };
 
       if (!indexJournal) {

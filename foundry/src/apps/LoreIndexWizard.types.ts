@@ -28,9 +28,52 @@ export interface ChapterCandidateView extends ParsedChapter<JournalChapterData> 
 // Wizard navigation
 // ---------------------------------------------------------------------------
 
-export type WizardStep = 'location' | 'chapters' | 'model' | 'indexing' | 'enriching';
+export type WizardStep = 'location' | 'chapters' | 'scenes' | 'model' | 'indexing' | 'enriching';
 export type IndexStatus = 'none' | 'exists';
 export type ModelContext = 'indexing' | 'vision';
+export type SceneRole = 'include' | 'overview' | 'skip';
+
+// ---------------------------------------------------------------------------
+// Lore index — structured machine-readable record written after indexing
+// ---------------------------------------------------------------------------
+
+export interface LoreChapter {
+  sourceId: string;
+  sourceName: string;
+  sourceType: 'folder' | 'journal' | 'page' | 'header';
+  role: 'chapter' | 'overview' | 'skip';
+  loreJournalId: string;
+  loreJournalName: string;
+}
+
+export interface LoreScene {
+  name: string;
+  role: SceneRole;
+  lorePageId: string;
+  /** Source heading texts that were mapped to this scene during pre-detection. */
+  headings: string[];
+}
+
+export interface LoreIndex {
+  builtAt: string;
+  /** sourceId → chapter metadata */
+  chapters: LoreChapter[];
+  /** chapterId (loreJournalId) → scenes */
+  scenes: Record<string, LoreScene[]>;
+}
+
+// ---------------------------------------------------------------------------
+// Scene pre-detection (heading candidates within a chapter)
+// ---------------------------------------------------------------------------
+
+export interface HeadingCandidate {
+  text: string;
+  level: number;
+  role: SceneRole;
+}
+
+/** Per-chapter scene selections: heading text → role */
+export type WizardSceneSelections = Record<string, Record<string, SceneRole>>;
 
 // ---------------------------------------------------------------------------
 // Indexing step view model
@@ -83,6 +126,12 @@ export interface EnrichmentCtx {
 // Full wizard context (passed to all step templates)
 // ---------------------------------------------------------------------------
 
+export interface SceneChapterView {
+  chapterId: string;
+  chapterName: string;
+  headings: (HeadingCandidate & { isInclude: boolean; isOverview: boolean; isSkip: boolean })[];
+}
+
 export interface WizardContext {
   phaseTitle: string;
   hasAnyLoreIndex: boolean;
@@ -92,6 +141,8 @@ export interface WizardContext {
   parserFormValues: Record<string, string>;
   // Chapters step
   chapters: ChapterCandidateView[];
+  // Scenes step
+  sceneChapters: SceneChapterView[];
   // Model step
   modelContext: ModelContext;
   selectedProvider: AiProvider;

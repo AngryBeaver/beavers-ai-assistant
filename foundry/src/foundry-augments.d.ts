@@ -43,4 +43,10 @@ interface SettingConfig {
   'beavers-ai-assistant.localAiUrl': string;
   'beavers-ai-assistant.sessionHistoryMessages': number;
   'beavers-ai-assistant.adventureJournalFolder': string;
+  'beavers-ai-assistant.wizardLocation': string;
+  'beavers-ai-assistant.wizardChapters': string;
+  'beavers-ai-assistant.wizardScenes': string;
+  'beavers-ai-assistant.wizardIndexingProvider': string;
+  'beavers-ai-assistant.wizardIndexingModel': string;
+  'beavers-ai-assistant.wizardIndexingReasoning': string;
 }

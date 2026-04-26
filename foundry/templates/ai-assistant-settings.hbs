@@ -35,13 +35,14 @@
         </p>
       </div>
       <div class="form-group">
-        <label>Model Name:</label>
+        <label>Model:</label>
         <div class="form-fields">
-          <input type="text" id="claude-model" name="claudeModel" value="{{claudeModel}}" data-dtype="String" style="font-family:monospace">
+          <select id="claude-model" name="claudeModel" data-dtype="String" style="width:100%">
+            {{#each claudeModels}}
+              <option value="{{this}}" {{#if (eq ../claudeModel this)}}selected{{/if}}>{{this}}</option>
+            {{/each}}
+          </select>
         </div>
-        <p class="notes hint">
-          Claude model ID
-        </p>
       </div>
     </div>
 
@@ -52,47 +53,27 @@
           <input type="text" id="ai-local-url" name="localAiUrl" value="{{localAiUrl}}"
             placeholder="{{defaultLocalAiUrl}}" data-dtype="String" style="font-family:monospace">
         </div>
-        <p class="notes hint"><i class="fas fa-server"></i>
-          LocalAI/Ollama endpoint
-        </p>
+        <p class="notes hint">Base URL of your LocalAI or Ollama server.</p>
       </div>
-      {{#unless localAiReachable}}
-      <div style="padding:.5rem .75rem;background:var(--color-level-warning-bg,#fff3cd);
-                  border:1px solid var(--color-level-warning,#e6ac00);border-radius:4px;
-                  font-size:.875em;margin-bottom:.75rem">
-        <i class="fas fa-triangle-exclamation"></i>
-        <strong>LocalAI is not reachable.</strong>
-        Make sure your LocalAI server is running at <code>{{localAiUrl}}</code>.
-      </div>
-      {{/unless}}
-
-      <div class="form-group">
+      <div class="form-group" style="margin-top:.75rem">
         <label>Active Model:</label>
         <div class="form-fields">
-          {{#if localAiReachable}}
-            <select id="local-model" name="localModel" data-dtype="String" style="width:100%">
-              {{#each installedLocalModels}}
-                <option value="{{this}}" {{#if (eq ../localModel this)}}selected{{/if}}>{{this}}</option>
-              {{/each}}
-            </select>
-          {{else}}
-            <input type="text" id="local-model" name="localModel" value="{{localModel}}"
-              placeholder="e.g. mistral" data-dtype="String" style="font-family:monospace">
-          {{/if}}
+          <select id="local-model" name="localModel" data-dtype="String" style="width:100%">
+            {{#each installedLocalModels}}
+              <option value="{{this}}" {{#if (eq ../localModel this)}}selected{{/if}}>{{this}}</option>
+            {{/each}}
+          </select>
         </div>
-        <p class="notes hint">Model currently used for inference. Install models below.</p>
-      </div>
-
-      <div class="form-group">
-        <label>Install Model:</label>
-        <div class="form-fields" style="display:flex;gap:.5rem">
-          <input type="text" id="install-model-name" placeholder="e.g. qwen3.5-9b"
-            style="flex:1;font-family:monospace">
-          <button type="button" data-action="installModel" style="white-space:nowrap">
-            <i class="fas fa-download"></i> Install
-          </button>
-        </div>
-        <p class="notes hint">Gallery model ID from <a href="https://localai.io/gallery.html" target="_blank">localai.io/gallery</a>. Download runs in background — click Refresh when done.</p>
+        {{#unless localAiReachable}}
+        <p class="notes hint" style="color:var(--color-level-warning,#e6ac00)">
+          <i class="fas fa-triangle-exclamation"></i> Server not reachable — check your URL above.
+        </p>
+        {{/unless}}
+        <p class="notes hint">
+          Model currently used for inference.
+          <a href="{{localAiModelsUrl}}" target="_blank"><i class="fas fa-download"></i> Install or manage models</a>
+          — then click Refresh.
+        </p>
       </div>
 
       <div class="form-group">
@@ -124,7 +105,7 @@
     <div class="form-group">
       <div class="form-fields">
         <button type="button" data-action="openLoreWizard" style="width:100%">
-          <i class="fas fa-wand-magic-sparkles"></i> Build Lore Index
+          <i class="fas fa-wand-magic-sparkles"></i> Adventure Setup
         </button>
       </div>
     </div>

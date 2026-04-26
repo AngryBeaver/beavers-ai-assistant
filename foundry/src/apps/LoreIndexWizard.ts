@@ -13,6 +13,7 @@ import { JournalParser, type JournalChapterData } from '../modules/JournalParser
 import { LoreIndexBuilder } from '../modules/LoreIndexBuilder.js';
 import { IndexingPassRunner } from '../modules/IndexingPassRunner.js';
 import { EnrichmentPassRunner } from '../modules/EnrichmentPassRunner.js';
+import { ChapterContentParser } from '../modules/JournalParser/index.js';
 import type {
   WizardStep,
   IndexStatus,
@@ -21,6 +22,13 @@ import type {
   EnrichmentCtx,
   WizardContext,
   ChapterCandidateView,
+  SceneChapterView,
+  HeadingCandidate,
+  SceneRole,
+  WizardSceneSelections,
+  LoreIndex,
+  LoreChapter,
+  LoreScene,
 } from './LoreIndexWizard.types.js';
 
 // ---------------------------------------------------------------------------
@@ -41,7 +49,7 @@ export class LoreIndexWizard extends foundry.applications.api.HandlebarsApplicat
 ) {
   static DEFAULT_OPTIONS = {
     id: 'beavers-lore-index-wizard',
-    window: { title: 'Lore Index Wizard', resizable: true },
+    window: { title: 'Adventure Setup', resizable: true },
     position: { width: 540 },
     actions: {
       continueFromLocation: LoreIndexWizard._onContinueFromLocation,
@@ -63,6 +71,9 @@ export class LoreIndexWizard extends foundry.applications.api.HandlebarsApplicat
       finishWizard: LoreIndexWizard._onFinishWizard,
       continueToEnrichment: LoreIndexWizard._onContinueToEnrichment,
       goToEnrichmentFromLocation: LoreIndexWizard._onGoToEnrichmentFromLocation,
+      // Scenes step
+      confirmScenes: LoreIndexWizard._onConfirmScenes,
+      backToScenes: LoreIndexWizard._onBackToScenes,
       // Vision model step
       backFromVisionModel: LoreIndexWizard._onBackFromVisionModel,
       startEnrichment: LoreIndexWizard._onStartEnrichment,
@@ -78,6 +89,7 @@ export class LoreIndexWizard extends foundry.applications.api.HandlebarsApplicat
   static PARTS = {
     location: { template: `modules/${NAMESPACE}/templates/wizard/location.hbs` },
     chapters: { template: `modules/${NAMESPACE}/templates/wizard/chapters.hbs` },
+    scenes: { template: `modules/${NAMESPACE}/templates/wizard/scenes.hbs` },
     model: { template: `modules/${NAMESPACE}/templates/wizard/model.hbs` },
     indexing: { template: `modules/${NAMESPACE}/templates/wizard/indexing.hbs` },
     enriching: { template: `modules/${NAMESPACE}/templates/wizard/enriching.hbs` },
@@ -109,6 +121,15 @@ export class LoreIndexWizard extends foundry.applications.api.HandlebarsApplicat
   private _enrichmentEntryPoint: 'indexing' | 'location' = 'indexing';
   private _estimatedEnrichmentScenes = 0;
 
+  // Scene step state — heading selections per chapter id
+  private _wizardSceneSelections: WizardSceneSelections = {};
+  // Heading candidates computed when entering scenes step
+  private _sceneHeadings: Record<string, HeadingCandidate[]> = {};
+  // Lore index record accumulator — built chapter by chapter during indexing
+  private _loreIndex: LoreIndex = { builtAt: '', chapters: [], scenes: {} };
+  // Index-all toggle (set before starting indexing)
+  private _indexAll = false;
+
   // Active AI call abort controller
   private _abortController: AbortController | null = null;
 
@@ -119,6 +140,9 @@ export class LoreIndexWizard extends foundry.applications.api.HandlebarsApplicat
   static open(): void {
     if (!LoreIndexWizard._instance) {
       LoreIndexWizard._instance = new LoreIndexWizard();
+      LoreIndexWizard._instance._loadLocation();
+      LoreIndexWizard._instance._loadScenes();
+      LoreIndexWizard._instance._loadModelPrefs();
     }
     LoreIndexWizard._instance.render({ force: true });
   }
@@ -140,7 +164,16 @@ export class LoreIndexWizard extends foundry.applications.api.HandlebarsApplicat
     if (this._step === 'location') this._setupLocationBadge();
     if (this._step === 'location') this._setupParserFieldListeners();
     if (this._step === 'chapters') this._setupChapterDragDrop();
+    if (this._step === 'scenes') this._setupScenesListeners();
     if (this._step === 'model') this._setupModelListeners();
+    if (
+      this._step === 'indexing' &&
+      this._runner.indexAll &&
+      this._runner.phase === 'pre_chapter' &&
+      !this._abortController
+    ) {
+      void this._runChapterIndexing();
+    }
     if (this._step === 'indexing' && this._runner.phase === 'overview') {
       void this._runIndexingOverview();
     }
@@ -277,6 +310,26 @@ export class LoreIndexWizard extends foundry.applications.api.HandlebarsApplicat
   }
 
   // ---------------------------------------------------------------------------
+  // Scenes step — role radio listeners
+  // ---------------------------------------------------------------------------
+
+  private _setupScenesListeners(): void {
+    const radios = Array.from(
+      this.element.querySelectorAll<HTMLInputElement>('input[name^="scene-role-"]'),
+    );
+    for (const radio of radios) {
+      radio.addEventListener('change', () => {
+        const chapterId = radio.dataset.chapterId ?? '';
+        const heading = radio.dataset.heading ?? '';
+        if (!chapterId || !heading) return;
+        this._wizardSceneSelections[chapterId] = this._wizardSceneSelections[chapterId] ?? {};
+        this._wizardSceneSelections[chapterId][heading] = radio.value as SceneRole;
+        this._saveScenes();
+      });
+    }
+  }
+
+  // ---------------------------------------------------------------------------
   // Model step — provider radio + model dropdown listeners
   // ---------------------------------------------------------------------------
 
@@ -302,6 +355,7 @@ export class LoreIndexWizard extends foundry.applications.api.HandlebarsApplicat
     if (modelSelect) {
       modelSelect.addEventListener('change', () => {
         this._selectedModel = modelSelect.value;
+        this._saveModelPrefs();
       });
     }
 
@@ -311,6 +365,7 @@ export class LoreIndexWizard extends foundry.applications.api.HandlebarsApplicat
     if (reasoningSelect) {
       reasoningSelect.addEventListener('change', () => {
         this._selectedReasoningEffort = reasoningSelect.value;
+        this._saveModelPrefs();
       });
     }
   }
@@ -360,6 +415,7 @@ export class LoreIndexWizard extends foundry.applications.api.HandlebarsApplicat
           showOverviewOption: true,
         }),
       ),
+      sceneChapters: this._buildSceneChaptersCtx(),
       modelContext: this._modelContext,
       selectedProvider: this._selectedProvider,
       selectedModel: this._selectedModel,
@@ -380,6 +436,29 @@ export class LoreIndexWizard extends foundry.applications.api.HandlebarsApplicat
       indexing: this._buildIndexingCtx(),
       enrichment: this._buildEnrichmentCtx(),
     };
+  }
+
+  private _buildSceneChaptersCtx(): SceneChapterView[] {
+    const contentParser = new ChapterContentParser(game as any);
+    return this._chapters
+      .filter((c) => c.role === 'chapter')
+      .map((c) => {
+        if (!this._sceneHeadings[c.id]) {
+          this._sceneHeadings[c.id] = contentParser.extractHeadings(c.data as any);
+        }
+        const saved = this._wizardSceneSelections[c.id] ?? {};
+        return {
+          chapterId: c.id,
+          chapterName: c.name,
+          headings: this._sceneHeadings[c.id].map((h) => ({
+            ...h,
+            role: (saved[h.text] ?? h.role) as SceneRole,
+            isInclude: (saved[h.text] ?? h.role) === 'include',
+            isOverview: (saved[h.text] ?? h.role) === 'overview',
+            isSkip: (saved[h.text] ?? h.role) === 'skip',
+          })),
+        };
+      });
   }
 
   private _locationName(): string {
@@ -546,11 +625,87 @@ export class LoreIndexWizard extends foundry.applications.api.HandlebarsApplicat
   }
 
   // ---------------------------------------------------------------------------
+  // Persistence helpers
+  // ---------------------------------------------------------------------------
+
+  private _saveLocation(): void {
+    game.settings.set(NAMESPACE, SETTINGS.WIZARD_LOCATION, JSON.stringify(this._parserFormValues));
+  }
+
+  private _loadLocation(): void {
+    try {
+      const raw = game.settings.get(NAMESPACE, SETTINGS.WIZARD_LOCATION) as string;
+      this._parserFormValues = JSON.parse(raw) || {};
+    } catch {
+      this._parserFormValues = {};
+    }
+  }
+
+  private _saveChapters(): void {
+    const data = this._chapters.map((c) => ({ id: c.id, name: c.name, role: c.role }));
+    game.settings.set(NAMESPACE, SETTINGS.WIZARD_CHAPTERS, JSON.stringify(data));
+  }
+
+  private _restoreChapterRoles(saved: { id: string; role: ChapterRole }[]): void {
+    if (!saved.length) return;
+    const roleMap = new Map(saved.map((s) => [s.id, s.role]));
+    for (const chapter of this._chapters) {
+      const savedRole = roleMap.get(chapter.id);
+      if (savedRole) chapter.role = savedRole;
+    }
+  }
+
+  private _saveScenes(): void {
+    game.settings.set(
+      NAMESPACE,
+      SETTINGS.WIZARD_SCENES,
+      JSON.stringify(this._wizardSceneSelections),
+    );
+  }
+
+  private _loadScenes(): void {
+    try {
+      const raw = game.settings.get(NAMESPACE, SETTINGS.WIZARD_SCENES) as string;
+      this._wizardSceneSelections = JSON.parse(raw) || {};
+    } catch {
+      this._wizardSceneSelections = {};
+    }
+  }
+
+  private _saveModelPrefs(): void {
+    game.settings.set(NAMESPACE, SETTINGS.WIZARD_INDEXING_PROVIDER, this._selectedProvider);
+    game.settings.set(NAMESPACE, SETTINGS.WIZARD_INDEXING_MODEL, this._selectedModel);
+    game.settings.set(NAMESPACE, SETTINGS.WIZARD_INDEXING_REASONING, this._selectedReasoningEffort);
+  }
+
+  private _loadModelPrefs(): void {
+    const savedProvider = game.settings.get(NAMESPACE, SETTINGS.WIZARD_INDEXING_PROVIDER) as string;
+    const savedModel = game.settings.get(NAMESPACE, SETTINGS.WIZARD_INDEXING_MODEL) as string;
+    const savedReasoning = game.settings.get(
+      NAMESPACE,
+      SETTINGS.WIZARD_INDEXING_REASONING,
+    ) as string;
+    this._selectedProvider = (savedProvider ||
+      (game.settings as any)?.get(NAMESPACE, SETTINGS.AI_PROVIDER) ||
+      DEFAULTS.AI_PROVIDER) as AiProvider;
+    this._selectedModel = savedModel || '';
+    this._selectedReasoningEffort = savedReasoning || '';
+  }
+
+  // ---------------------------------------------------------------------------
   // Chapter detection
   // ---------------------------------------------------------------------------
 
   private _runChapterDetection(): void {
     this._chapters = this._parser.detectChapters(this._parserFormValues);
+    // Restore previously saved roles
+    try {
+      const raw = game.settings.get(NAMESPACE, SETTINGS.WIZARD_CHAPTERS) as string;
+      const saved: { id: string; role: ChapterRole }[] = JSON.parse(raw) || [];
+      this._restoreChapterRoles(saved);
+    } catch {
+      /* ignore */
+    }
     this._goToStep('chapters');
   }
 
@@ -597,6 +752,7 @@ export class LoreIndexWizard extends foundry.applications.api.HandlebarsApplicat
     }
 
     this._indexStatus = this._detectIndexStatusFor();
+    this._saveLocation();
     this._runChapterDetection();
   }
 
@@ -613,9 +769,19 @@ export class LoreIndexWizard extends foundry.applications.api.HandlebarsApplicat
       return;
     }
 
-    this._selectedProvider =
-      ((game.settings as any)?.get(NAMESPACE, SETTINGS.AI_PROVIDER) as AiProvider) ||
-      DEFAULTS.AI_PROVIDER;
+    this._saveChapters();
+    // Clear cached headings so they're re-extracted with fresh chapter content
+    this._sceneHeadings = {};
+    this._goToStep('scenes');
+  }
+
+  static async _onBackToChapters(this: LoreIndexWizard): Promise<void> {
+    this._goToStep('chapters');
+  }
+
+  static async _onConfirmScenes(this: LoreIndexWizard): Promise<void> {
+    this._saveScenes();
+    this._loadModelPrefs();
 
     if (
       this._selectedProvider === 'local-ai' &&
@@ -625,11 +791,12 @@ export class LoreIndexWizard extends foundry.applications.api.HandlebarsApplicat
       await this._fetchModels();
     }
 
+    this._modelContext = 'indexing';
     this._goToStep('model');
   }
 
-  static async _onBackToChapters(this: LoreIndexWizard): Promise<void> {
-    this._goToStep('chapters');
+  static async _onBackToScenes(this: LoreIndexWizard): Promise<void> {
+    this._goToStep('scenes');
   }
 
   static async _onRefreshModels(this: LoreIndexWizard): Promise<void> {
@@ -667,7 +834,27 @@ export class LoreIndexWizard extends foundry.applications.api.HandlebarsApplicat
       return;
     }
 
-    this._runner.start(queue, overviewChapter);
+    this._saveModelPrefs();
+
+    const indexAllEl = this.element.querySelector<HTMLInputElement>('#wizard-index-all');
+    this._indexAll = indexAllEl?.checked ?? false;
+
+    // Initialise lore index accumulator
+    const loc = JournalParser.decodeLocation(this._parserFormValues);
+    this._loreIndex = {
+      builtAt: new Date().toISOString(),
+      chapters: this._chapters.map((c) => ({
+        sourceId: c.id,
+        sourceName: c.name,
+        sourceType: (c.data as any)?.sourceType ?? 'journal',
+        role: c.role as LoreChapter['role'],
+        loreJournalId: '',
+        loreJournalName: c.name,
+      })),
+      scenes: {},
+    };
+
+    this._runner.start(queue, overviewChapter, this._indexAll);
     this._goToStep('indexing');
   }
 
@@ -769,7 +956,11 @@ export class LoreIndexWizard extends foundry.applications.api.HandlebarsApplicat
 
   static async _onBackFromVisionModel(this: LoreIndexWizard): Promise<void> {
     this._modelContext = 'indexing';
-    this._goToStep(this._enrichmentEntryPoint === 'location' ? 'location' : 'indexing');
+    if (this._enrichmentEntryPoint === 'location') {
+      this._goToStep('location');
+    } else {
+      this._goToStep('scenes');
+    }
   }
 
   static async _onStartEnrichment(this: LoreIndexWizard): Promise<void> {
@@ -830,6 +1021,25 @@ export class LoreIndexWizard extends foundry.applications.api.HandlebarsApplicat
     return opts;
   }
 
+  private _buildHeadingHints(chapterId: string): {
+    include: string[];
+    skip: string[];
+    overview: string[];
+  } {
+    const headings = this._sceneHeadings[chapterId] ?? [];
+    const saved = this._wizardSceneSelections[chapterId] ?? {};
+    const include: string[] = [];
+    const skip: string[] = [];
+    const overview: string[] = [];
+    for (const h of headings) {
+      const role = (saved[h.text] ?? h.role) as SceneRole;
+      if (role === 'include') include.push(h.text);
+      else if (role === 'skip') skip.push(h.text);
+      else if (role === 'overview') overview.push(h.text);
+    }
+    return { include, skip, overview };
+  }
+
   private async _runChapterIndexing(): Promise<void> {
     const chapter = this._runner.currentChapter;
     if (!chapter) return;
@@ -840,13 +1050,35 @@ export class LoreIndexWizard extends foundry.applications.api.HandlebarsApplicat
 
     try {
       const content = this._parser.parseContent(chapter as ParsedChapter<JournalChapterData>);
-      const sceneCount = await this._createBuilder().indexChapter(
+      const hints = this._buildHeadingHints(chapter.id);
+      const result = await this._createBuilder().indexChapter(
         chapter.name,
         content,
         this._indexingCallOptions(),
         (line) => this._addLogLine(line),
+        hints,
       );
-      this._runner.chapterComplete(sceneCount);
+
+      // Update lore index accumulator
+      const chapterEntry = this._loreIndex.chapters.find((c) => c.sourceId === chapter.id);
+      if (chapterEntry) {
+        chapterEntry.loreJournalId = result.journalId;
+        this._loreIndex.scenes[result.journalId] = result.sceneNames.map((name) => {
+          const matchedHeadings = (this._sceneHeadings[chapter.id] ?? [])
+            .filter(
+              (h) => (this._wizardSceneSelections[chapter.id]?.[h.text] ?? h.role) === 'include',
+            )
+            .map((h) => h.text);
+          return {
+            name,
+            role: 'include' as SceneRole,
+            lorePageId: '',
+            headings: matchedHeadings,
+          } satisfies LoreScene;
+        });
+      }
+
+      this._runner.chapterComplete(result.sceneCount, result.sceneNames, result.journalId);
     } catch (err) {
       if ((err as DOMException).name === 'AbortError') {
         this._runner.stopEarly();
@@ -858,6 +1090,13 @@ export class LoreIndexWizard extends foundry.applications.api.HandlebarsApplicat
     }
 
     this.render({ force: true });
+    // In index-all mode, auto-continue to next chapter or overview
+    if (this._indexAll && this._runner.phase === 'between') {
+      if (this._runner.hasNextChapter) {
+        this._runner.continueToNext();
+        this.render({ force: true });
+      }
+    }
   }
 
   private async _runIndexingOverview(): Promise<void> {
@@ -871,6 +1110,9 @@ export class LoreIndexWizard extends foundry.applications.api.HandlebarsApplicat
           )
         : undefined;
       await builder.indexOverview(overviewContent, this._indexingCallOptions());
+      // Finalize and persist the lore index record
+      this._loreIndex.builtAt = new Date().toISOString();
+      await builder.writeIndex(this._loreIndex);
       this._runner.overviewComplete();
     } catch (err) {
       if ((err as DOMException).name === 'AbortError') {

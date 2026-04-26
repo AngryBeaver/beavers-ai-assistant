@@ -3,6 +3,7 @@ import { Settings } from './settings/Settings.js';
 import { ContextBuilder } from '../modules/ContextBuilder.js';
 import type { GameData } from '../modules/ContextBuilder.js';
 import { AiService } from '../services/AiService.js';
+import { LoreIndexWizard } from './LoreIndexWizard.js';
 
 interface SituationAssessment {
   currentScene: string;
@@ -17,6 +18,8 @@ interface AiGmWindowContext {
   loreIndexExists: boolean;
   availableChapters: string[];
   selectedChapter: string;
+  availableScenes: string[];
+  selectedScene: string;
   phase: InteractPhase;
   assessment: SituationAssessment | null;
   confirmedScene: string;
@@ -45,6 +48,7 @@ export class AiGmWindow extends foundry.applications.api.HandlebarsApplicationMi
       accept: AiGmWindow._onAccept,
       stop: AiGmWindow._onStop,
       openSettings: AiGmWindow._onOpenSettings,
+      openAdventureSetup: AiGmWindow._onOpenAdventureSetup,
     },
   };
 
@@ -61,6 +65,7 @@ export class AiGmWindow extends foundry.applications.api.HandlebarsApplicationMi
   // ---------------------------------------------------------------------------
 
   private _selectedChapter = '';
+  private _selectedScene = '';
   private _phase: InteractPhase = 'idle';
   private _assessment: SituationAssessment | null = null;
   private _confirmedScene = '';
@@ -80,7 +85,7 @@ export class AiGmWindow extends foundry.applications.api.HandlebarsApplicationMi
   static open(): void {
     if (!Settings.isConfigured()) {
       ui.notifications.error(
-        'AI Assistant is not configured. Enable it and enter your Claude API key in the AI Assistant settings.',
+        'AI Assistant is not configured. Enable it in the AI Assistant settings.',
       );
       return;
     }
@@ -96,11 +101,19 @@ export class AiGmWindow extends foundry.applications.api.HandlebarsApplicationMi
     if (!this._selectedChapter && availableChapters.length > 0) {
       this._selectedChapter = availableChapters[0];
     }
+    const availableScenes = this._selectedChapter
+      ? this._loadScenesForChapter(this._selectedChapter)
+      : [];
+    if (this._selectedScene && !availableScenes.includes(this._selectedScene)) {
+      this._selectedScene = '';
+    }
 
     return {
       loreIndexExists: availableChapters.length > 0,
       availableChapters,
       selectedChapter: this._selectedChapter,
+      availableScenes,
+      selectedScene: this._selectedScene,
       phase: this._phase,
       assessment: this._assessment,
       confirmedScene: this._confirmedScene,
@@ -112,10 +125,18 @@ export class AiGmWindow extends foundry.applications.api.HandlebarsApplicationMi
   }
 
   protected _onRender(_context: object, _options: object): void {
-    // Chapter select — update state on change without triggering a full re-render
+    // Chapter select — re-render to refresh scene list when chapter changes
     const chapterSelect = this.element?.querySelector<HTMLSelectElement>('#ai-chapter-select');
     chapterSelect?.addEventListener('change', (e) => {
       this._selectedChapter = (e.target as HTMLSelectElement).value;
+      this._selectedScene = '';
+      void this.render({ force: true });
+    });
+
+    // Scene select — update state on change
+    const sceneSelect = this.element?.querySelector<HTMLSelectElement>('#ai-scene-select');
+    sceneSelect?.addEventListener('change', (e) => {
+      this._selectedScene = (e.target as HTMLSelectElement).value;
     });
 
     // Scene override input in the confirmation card
@@ -238,6 +259,10 @@ Include 1-3 npcCandidates ranked by likelihood. Use names exactly as they appear
     }
   }
 
+  static _onOpenAdventureSetup(): void {
+    LoreIndexWizard.open();
+  }
+
   // ---------------------------------------------------------------------------
   // Private helpers
   // ---------------------------------------------------------------------------
@@ -257,7 +282,7 @@ Include 1-3 npcCandidates ranked by likelihood. Use names exactly as they appear
     try {
       const context = await new ContextBuilder(game as unknown as GameData).build(
         this._selectedChapter,
-        this._confirmedScene,
+        this._confirmedScene || this._selectedScene,
       );
 
       const systemPrompt = `You are a TTRPG GM assistant voicing an NPC for a live game session.
@@ -301,19 +326,78 @@ Do not include stage directions or out-of-character notes.`;
     await this.render();
   }
 
-  /** Load chapter names from the lore index journal. */
-  private _loadChapters(): string[] {
-    const moduleFolder = (game.folders as any)?.find(
-      (f: any) => f.name === MODULE_FOLDER_NAME && f.type === 'JournalEntry',
+  /** Find the lore-index subfolder inside the beavers-ai-assistant module folder. */
+  private _getLoreIndexFolder(): any | null {
+    const modFolder = (game.folders as any)?.find(
+      (f: any) => f.name === MODULE_FOLDER_NAME && f.type === 'JournalEntry' && !f.folder,
     );
-    const indexJournal = moduleFolder
-      ? (game.journal as any)?.find(
-          (j: any) => j.folder?.id === moduleFolder.id && j.name === LORE_INDEX_JOURNAL_NAME,
-        )
-      : null;
-    if (!indexJournal) return [];
-    return (indexJournal.pages.contents as any[])
-      .filter((p: any) => (p.name as string)?.startsWith('Chapter: '))
-      .map((p: any) => (p.name as string).replace('Chapter: ', ''));
+    if (!modFolder) return null;
+    return (
+      (game.folders as any)?.find(
+        (f: any) =>
+          f.name === LORE_INDEX_JOURNAL_NAME &&
+          f.type === 'JournalEntry' &&
+          f.folder?.id === modFolder.id,
+      ) ?? null
+    );
+  }
+
+  /** Load chapter names from the per-chapter journals in the lore-index subfolder. */
+  private _loadChapters(): string[] {
+    const loreFolder = this._getLoreIndexFolder();
+    if (!loreFolder) return [];
+    const excluded = new Set(['Overview', '_index']);
+    return (
+      (game.journal as any)
+        ?.filter((j: any) => j.folder?.id === loreFolder.id && !excluded.has(j.name as string))
+        .map((j: any) => j.name as string)
+        .sort() ?? []
+    );
+  }
+
+  /**
+   * Load scene names for a chapter — only scenes with role "include"
+   * (overview/skip headings are folded into the chapter Summary by the AI).
+   *
+   * Reads from the structured _index JSON record when available;
+   * falls back to "Scene: X" journal pages otherwise.
+   */
+  private _loadScenesForChapter(chapterName: string): string[] {
+    const loreFolder = this._getLoreIndexFolder();
+    if (!loreFolder) return [];
+
+    const chapterJournal = (game.journal as any)?.find(
+      (j: any) => j.folder?.id === loreFolder.id && j.name === chapterName,
+    );
+    if (!chapterJournal) return [];
+
+    // Prefer the _index JSON record — it has explicit per-scene role fields
+    const indexJournal = (game.journal as any)?.find(
+      (j: any) => j.folder?.id === loreFolder.id && j.name === '_index',
+    );
+    if (indexJournal) {
+      const indexPage = (indexJournal.pages.contents as any[])?.find(
+        (p: any) => p.name === 'index',
+      );
+      if (indexPage) {
+        try {
+          const raw = ((indexPage.text?.content as string) ?? '').replace(/<[^>]*>/g, '').trim();
+          const loreIndex = JSON.parse(raw) as {
+            scenes?: Record<string, Array<{ name: string; role: string }>>;
+          };
+          const sceneList = loreIndex.scenes?.[chapterJournal.id as string];
+          if (sceneList) {
+            return sceneList.filter((s) => s.role === 'include').map((s) => s.name);
+          }
+        } catch {
+          /* fall through to journal page scan */
+        }
+      }
+    }
+
+    // Fallback: "Scene: X" journal pages (only written for include-role scenes)
+    return (chapterJournal.pages.contents as any[])
+      .filter((p: any) => (p.name as string)?.startsWith('Scene: '))
+      .map((p: any) => (p.name as string).replace('Scene: ', ''));
   }
 }

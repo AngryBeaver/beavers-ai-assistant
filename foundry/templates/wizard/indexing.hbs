@@ -28,7 +28,8 @@
   <p style="font-size:.875em;opacity:.75;margin-top:0">~{{indexing.chapterTokensFormatted}} input tokens</p>
   <div class="lw-nav" style="gap:.5rem">
     <button type="button" data-action="indexThisChapter" style="flex:1">
-      <i class="fas fa-wand-magic-sparkles"></i> Index this chapter
+      <i class="fas fa-wand-magic-sparkles"></i>
+      {{#if indexing.isAlreadyIndexed}}Rebuild{{else}}Index this chapter{{/if}}
     </button>
     <button type="button" data-action="previewSource" title="Preview the markdown that will be sent to the AI">
       <i class="fas fa-eye"></i>
@@ -36,6 +37,9 @@
     <button type="button" data-action="skipThisChapter">Skip</button>
     <button type="button" data-action="stopIndexing">Stop for now</button>
   </div>
+  <label style="display:flex;align-items:center;gap:.5rem;font-size:.85em;margin-top:.5rem;cursor:pointer">
+    <input type="checkbox" id="wizard-index-all"> Index all remaining chapters automatically
+  </label>
   {{/if}}
 
   {{!-- ALREADY_INDEXED: offer rebuild or keep --}}

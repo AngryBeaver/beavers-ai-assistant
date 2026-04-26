@@ -26,6 +26,14 @@ export const SETTINGS = {
   LOCAL_AI_URL: 'localAiUrl',
   SESSION_HISTORY_MESSAGES: 'sessionHistoryMessages',
   ADVENTURE_JOURNAL_FOLDER: 'adventureJournalFolder',
+
+  // Lore Index Wizard — persisted selections (client-scoped)
+  WIZARD_LOCATION: 'wizardLocation',
+  WIZARD_CHAPTERS: 'wizardChapters',
+  WIZARD_SCENES: 'wizardScenes',
+  WIZARD_INDEXING_PROVIDER: 'wizardIndexingProvider',
+  WIZARD_INDEXING_MODEL: 'wizardIndexingModel',
+  WIZARD_INDEXING_REASONING: 'wizardIndexingReasoning',
 } as const;
 
 export type AiProvider = 'claude' | 'local-ai';

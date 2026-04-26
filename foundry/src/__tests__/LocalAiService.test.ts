@@ -78,7 +78,7 @@ describe('LocalAiService', () => {
 
       const body = JSON.parse(init.body);
       expect(body.messages).toEqual([
-        { role: 'system', content: 'my system' },
+        { role: 'system', content: '/no_think\nmy system' },
         { role: 'user', content: 'my user' },
       ]);
       expect(body.max_tokens).toBe(256);

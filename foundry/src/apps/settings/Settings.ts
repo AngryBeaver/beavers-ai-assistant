@@ -12,11 +12,14 @@ export class Settings {
     this.registerMenus();
   }
 
-  /** True only when the AI Assistant is enabled and a Claude API key is configured. */
+  /** True when the AI Assistant is enabled and a provider is ready to use. */
   static isConfigured(): boolean {
     const enabled = game.settings.get(NAMESPACE, SETTINGS.AI_ASSISTANT_ENABLED) as boolean;
+    if (!enabled) return false;
+    const provider = game.settings.get(NAMESPACE, SETTINGS.AI_PROVIDER) as string;
+    if (provider === 'local-ai') return true;
     const apiKey = game.settings.get(NAMESPACE, SETTINGS.CLAUDE_API_KEY) as string;
-    return enabled && !!apiKey;
+    return !!apiKey;
   }
 
   private registerSettings(): void {
@@ -77,6 +80,44 @@ export class Settings {
       type: String,
       default: '',
     });
+
+    // Lore Index Wizard — persisted selections (client-scoped)
+    game.settings.register(NAMESPACE, SETTINGS.WIZARD_LOCATION, {
+      scope: 'client',
+      config: false,
+      type: String,
+      default: '{}',
+    });
+    game.settings.register(NAMESPACE, SETTINGS.WIZARD_CHAPTERS, {
+      scope: 'client',
+      config: false,
+      type: String,
+      default: '[]',
+    });
+    game.settings.register(NAMESPACE, SETTINGS.WIZARD_SCENES, {
+      scope: 'client',
+      config: false,
+      type: String,
+      default: '{}',
+    });
+    game.settings.register(NAMESPACE, SETTINGS.WIZARD_INDEXING_PROVIDER, {
+      scope: 'client',
+      config: false,
+      type: String,
+      default: '',
+    });
+    game.settings.register(NAMESPACE, SETTINGS.WIZARD_INDEXING_MODEL, {
+      scope: 'client',
+      config: false,
+      type: String,
+      default: '',
+    });
+    game.settings.register(NAMESPACE, SETTINGS.WIZARD_INDEXING_REASONING, {
+      scope: 'client',
+      config: false,
+      type: String,
+      default: '',
+    });
   }
 
   private registerMenus(): void {
@@ -92,7 +133,7 @@ export class Settings {
     game.settings.registerMenu(NAMESPACE, 'aiAssistant', {
       name: 'AI Assistant',
       label: 'Configure',
-      hint: 'Set up the Claude API key, context size, and adventure journals for the AI GM Window.',
+      hint: 'Set up the AI provider, context size, and run Adventure Setup for the AI GM Window.',
       icon: 'bai-icon',
       type: AiAssistantSettingsApp,
       restricted: true,

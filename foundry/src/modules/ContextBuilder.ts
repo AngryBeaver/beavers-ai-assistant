@@ -254,22 +254,25 @@ export class ContextBuilder {
   private async _readLore(
     adventureFolder: string,
     moduleFolder: string,
-    indexJournalName: string,
+    indexFolderName: string,
     selectedChapter?: string,
     selectedScene?: string,
   ): Promise<string | null> {
-    // Try three-tier index first
+    // Try per-chapter subfolder index (structure created by Adventure Setup wizard)
     const modFolder = this.#game.folders?.find(
       (f) => f.name === moduleFolder && f.type === 'JournalEntry',
     );
-    const indexJournal = modFolder
-      ? this.#game.journal?.find(
-          (j) => j.folder?.id === modFolder.id && j.name === indexJournalName,
+    const loreFolder = modFolder
+      ? this.#game.folders?.find(
+          (f) =>
+            f.name === indexFolderName &&
+            f.type === 'JournalEntry' &&
+            f.folder?.id === modFolder.id,
         )
       : undefined;
 
-    if (indexJournal) {
-      const indexed = this._readThreeTierIndex(indexJournal, selectedChapter, selectedScene);
+    if (loreFolder) {
+      const indexed = this._readPerChapterIndex(loreFolder, selectedChapter, selectedScene);
       if (indexed) return indexed;
     }
 
@@ -306,20 +309,26 @@ export class ContextBuilder {
   }
 
   /**
-   * Load lore pages from the three-tier index based on GM selection state:
-   * - Chapter + Scene → Overview + Chapter:<name> + Scene:<name>
-   * - Chapter only   → Overview + Chapter:<name>
+   * Read lore from the per-chapter journal structure created by Adventure Setup:
+   * - lore-index/ (subfolder)
+   *   - Overview (journal) → Overview page
+   *   - <ChapterName> (journal) → Summary + Scene: <name> pages
+   *
+   * Selection tiers:
+   * - Chapter + Scene → Overview + Chapter summary + Scene page
+   * - Chapter only   → Overview + Chapter summary
    * - Nothing        → Overview only
    * - No Overview    → null (index not built yet, use fallback)
    */
-  private _readThreeTierIndex(
-    journal: JournalData,
+  private _readPerChapterIndex(
+    loreFolder: FolderData,
     selectedChapter?: string,
     selectedScene?: string,
   ): string | null {
-    const pages = journal.pages.contents;
-
-    const overviewPage = pages.find((p) => p.name === 'Overview');
+    const overviewJournal = this.#game.journal?.find(
+      (j) => j.folder?.id === loreFolder.id && j.name === 'Overview',
+    );
+    const overviewPage = overviewJournal?.pages.contents.find((p) => p.name === 'Overview');
     if (!overviewPage) return null;
 
     const overviewText = pageText(overviewPage).trim();
@@ -328,17 +337,24 @@ export class ContextBuilder {
     const parts: string[] = [`## Overview\n${overviewText}`];
 
     if (selectedChapter) {
-      const chapterPage = pages.find((p) => p.name === `Chapter: ${selectedChapter}`);
-      if (chapterPage) {
-        const text = pageText(chapterPage).trim();
-        if (text) parts.push(`## Chapter: ${selectedChapter}\n${text}`);
-      }
+      const chapterJournal = this.#game.journal?.find(
+        (j) => j.folder?.id === loreFolder.id && j.name === selectedChapter,
+      );
+      if (chapterJournal) {
+        const summaryPage = chapterJournal.pages.contents.find((p) => p.name === 'Summary');
+        if (summaryPage) {
+          const text = pageText(summaryPage).trim();
+          if (text) parts.push(`## Chapter: ${selectedChapter}\n${text}`);
+        }
 
-      if (selectedScene) {
-        const scenePage = pages.find((p) => p.name === `Scene: ${selectedScene}`);
-        if (scenePage) {
-          const text = pageText(scenePage).trim();
-          if (text) parts.push(`## Scene: ${selectedScene}\n${text}`);
+        if (selectedScene) {
+          const scenePage = chapterJournal.pages.contents.find(
+            (p) => p.name === `Scene: ${selectedScene}`,
+          );
+          if (scenePage) {
+            const text = pageText(scenePage).trim();
+            if (text) parts.push(`## Scene: ${selectedScene}\n${text}`);
+          }
         }
       }
     }

@@ -24,6 +24,9 @@ export class IndexingPassRunner {
   private _completedCount = 0;
   private _sceneCount = 0;
   private _error: string | null = null;
+  private _lastSceneNames: string[] = [];
+  private _lastJournalId = '';
+  private _indexAll = false;
 
   // ---------------------------------------------------------------------------
   // Getters
@@ -65,12 +68,25 @@ export class IndexingPassRunner {
   get error(): string | null {
     return this._error;
   }
+  get lastSceneNames(): string[] {
+    return this._lastSceneNames;
+  }
+  get lastJournalId(): string {
+    return this._lastJournalId;
+  }
+  get indexAll(): boolean {
+    return this._indexAll;
+  }
 
   // ---------------------------------------------------------------------------
   // Transitions
   // ---------------------------------------------------------------------------
 
-  start(queue: ParsedChapter<unknown>[], overviewChapter: ParsedChapter<unknown> | null): void {
+  start(
+    queue: ParsedChapter<unknown>[],
+    overviewChapter: ParsedChapter<unknown> | null,
+    indexAll = false,
+  ): void {
     this._queue = queue;
     this._overviewChapter = overviewChapter;
     this._currentIdx = 0;
@@ -80,6 +96,9 @@ export class IndexingPassRunner {
     this._completedCount = 0;
     this._sceneCount = 0;
     this._error = null;
+    this._lastSceneNames = [];
+    this._lastJournalId = '';
+    this._indexAll = indexAll;
   }
 
   markAlreadyIndexed(): void {
@@ -92,10 +111,12 @@ export class IndexingPassRunner {
     this._error = null;
   }
 
-  chapterComplete(sceneCount: number): void {
+  chapterComplete(sceneCount: number, sceneNames: string[] = [], journalId = ''): void {
     this._completedCount++;
     this._sceneCount += sceneCount;
     this._justCompleted = this.currentChapter?.name ?? '';
+    this._lastSceneNames = sceneNames;
+    this._lastJournalId = journalId;
     this._phase = 'between';
   }
 

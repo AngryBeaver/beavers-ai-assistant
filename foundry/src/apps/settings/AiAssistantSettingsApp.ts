@@ -1,4 +1,5 @@
 import { DEFAULTS, NAMESPACE, SETTINGS } from '../../definitions.js';
+import { AiService } from '../../services/AiService.js';
 import { LoreIndexWizard } from '../LoreIndexWizard.js';
 
 interface AiAssistantContext {
@@ -8,10 +9,12 @@ interface AiAssistantContext {
   isLocalAiProvider: boolean;
   claudeApiKey: string;
   claudeModel: string;
+  claudeModels: string[];
   localModel: string;
   localAiUrl: string;
   installedLocalModels: string[];
   localAiReachable: boolean;
+  localAiModelsUrl: string;
   sessionHistoryMessages: number;
   defaultClaudeModel: string;
   defaultLocalAiUrl: string;
@@ -29,7 +32,6 @@ export class AiAssistantSettingsApp extends (foundry.applications.api.Handlebars
       save: AiAssistantSettingsApp._onSave,
       openLoreWizard: AiAssistantSettingsApp._onOpenLoreWizard,
       refreshModels: AiAssistantSettingsApp._onRefreshModels,
-      installModel: AiAssistantSettingsApp._onInstallModel,
     },
   };
 
@@ -66,18 +68,24 @@ export class AiAssistantSettingsApp extends (foundry.applications.api.Handlebars
 
     let installedLocalModels: string[] = [];
     let localAiReachable = false;
+    const savedLocalModel = game.settings.get(NAMESPACE, SETTINGS.LOCAL_MODEL) as string;
+    const savedClaudeModel = game.settings.get(NAMESPACE, SETTINGS.CLAUDE_MODEL) as string;
 
-    if (aiProvider === 'local-ai') {
-      try {
-        const response = await fetch(`${localAiUrl}/v1/models`);
-        if (response.ok) {
-          const data = (await response.json()) as any;
-          installedLocalModels = (data.data ?? []).map((m: any) => m.id as string);
-          localAiReachable = true;
-        }
-      } catch {
-        // LocalAI not running or unreachable
-      }
+    try {
+      installedLocalModels = await AiService.get('local-ai').fetchModels();
+      localAiReachable = true;
+    } catch {
+      // LocalAI not running or unreachable
+    }
+
+    // Always keep the saved model in the list so the dropdown preserves the selection
+    if (savedLocalModel && !installedLocalModels.includes(savedLocalModel)) {
+      installedLocalModels = [savedLocalModel, ...installedLocalModels];
+    }
+
+    const claudeModels = await AiService.get('claude').fetchModels();
+    if (savedClaudeModel && !claudeModels.includes(savedClaudeModel)) {
+      claudeModels.unshift(savedClaudeModel);
     }
 
     return {
@@ -86,11 +94,13 @@ export class AiAssistantSettingsApp extends (foundry.applications.api.Handlebars
       isClaudeProvider: aiProvider === 'claude',
       isLocalAiProvider: aiProvider === 'local-ai',
       claudeApiKey: game.settings.get(NAMESPACE, SETTINGS.CLAUDE_API_KEY) as string,
-      claudeModel: game.settings.get(NAMESPACE, SETTINGS.CLAUDE_MODEL) as string,
-      localModel: game.settings.get(NAMESPACE, SETTINGS.LOCAL_MODEL) as string,
+      claudeModel: savedClaudeModel,
+      claudeModels,
+      localModel: savedLocalModel,
       localAiUrl,
       installedLocalModels,
       localAiReachable,
+      localAiModelsUrl: `${localAiUrl}/app/models`,
       sessionHistoryMessages: game.settings.get(
         NAMESPACE,
         SETTINGS.SESSION_HISTORY_MESSAGES,
@@ -108,9 +118,7 @@ export class AiAssistantSettingsApp extends (foundry.applications.api.Handlebars
     const claudeApiKey = (
       this.element.querySelector('#ai-api-key') as HTMLInputElement
     ).value.trim();
-    const claudeModel = (
-      this.element.querySelector('#claude-model') as HTMLInputElement
-    ).value.trim();
+    const claudeModel = (this.element.querySelector('#claude-model') as HTMLSelectElement).value;
     const localModel =
       (this.element.querySelector('#local-model') as HTMLSelectElement).value ||
       DEFAULTS.LOCAL_MODEL;
@@ -137,39 +145,6 @@ export class AiAssistantSettingsApp extends (foundry.applications.api.Handlebars
 
   static async _onRefreshModels(this: AiAssistantSettingsApp): Promise<void> {
     await this.render();
-  }
-
-  static async _onInstallModel(this: AiAssistantSettingsApp): Promise<void> {
-    const modelName = (
-      this.element.querySelector('#install-model-name') as HTMLInputElement
-    ).value.trim();
-
-    if (!modelName) {
-      ui.notifications.warn('Enter a model name to install.');
-      return;
-    }
-
-    const localAiUrl =
-      (game.settings.get(NAMESPACE, SETTINGS.LOCAL_AI_URL) as string) || DEFAULTS.LOCAL_AI_URL;
-
-    try {
-      const response = await fetch(`${localAiUrl}/models/apply`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: modelName }),
-      });
-
-      if (!response.ok) {
-        const err = (await response.json().catch(() => ({}))) as any;
-        throw new Error(err?.error || response.statusText);
-      }
-
-      ui.notifications.info(
-        `Installing "${modelName}" — this may take several minutes. Click Refresh when done.`,
-      );
-    } catch (err) {
-      ui.notifications.error(`Install failed: ${(err as Error).message}`);
-    }
   }
 
   static async _onOpenLoreWizard(_this: AiAssistantSettingsApp): Promise<void> {

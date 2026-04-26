@@ -167,15 +167,15 @@ export class JournalApi {
   }
 
   /**
-   * Append HTML to a transcript page, auto-rotating to a new page when the
+   * Append markdown to a transcript page, auto-rotating to a new page when the
    * current one exceeds maxPageBytes (default 50 KB). Pages are named
    * "<pageName>", "<pageName> (2)", "<pageName> (3)", etc.
-   * Creates the journal entry's page on first call.
+   * Creates the journal entry's page on first call. Each call appends a newline.
    */
   static async appendJournalPage(
     journalIdentifier: string,
     pageName: string,
-    html: string,
+    markdown: string,
     maxPageBytes = 50_000,
   ) {
     const journal = game.journal.get(journalIdentifier) || game.journal.getName(journalIdentifier);
@@ -200,18 +200,18 @@ export class JournalApi {
     const currentPage = matching[0] ?? null;
     const currentSize = new TextEncoder().encode(currentPage?.text?.content ?? '').length;
 
-    if (!currentPage || currentSize + new TextEncoder().encode(html).length > maxPageBytes) {
+    if (!currentPage || currentSize + new TextEncoder().encode(markdown).length > maxPageBytes) {
       const nextNum = currentPage
         ? parseInt(currentPage.name.match(pattern)?.[1] ?? '1') + 1
         : null;
       const newName = nextNum ? `${pageName} (${nextNum})` : pageName;
       // @ts-ignore
       return journal.createEmbeddedDocuments('JournalEntryPage', [
-        { name: newName, type: 'text', text: { content: html, format: 1 } },
+        { name: newName, type: 'text', text: { content: markdown + '\n', format: 2 } },
       ]);
     }
 
     const existing = currentPage.text?.content ?? '';
-    return currentPage.update({ 'text.content': existing + html });
+    return currentPage.update({ 'text.content': existing + markdown + '\n' });
   }
 }

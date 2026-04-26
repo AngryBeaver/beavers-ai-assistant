@@ -1,0 +1,80 @@
+<div class="beavers-ai-assistant lore-wizard standard-form">
+
+  {{#if phaseTitle}}<p class="lw-phase-title">{{phaseTitle}}</p>{{/if}}
+
+  <p class="lw-intro" style="margin-top:0">
+    Review the sections found in each chapter. Mark what should be indexed as a scene,
+    treated as overview/background, or skipped entirely.
+  </p>
+
+  {{#each sceneChapters}}
+  <fieldset style="margin-bottom:.75rem">
+    <legend>{{chapterName}}</legend>
+
+    {{#if headings}}
+    <table class="lw-table" style="width:100%">
+      <colgroup>
+        <col style="width:50%">
+        <col style="width:16%">
+        <col style="width:17%">
+        <col style="width:17%">
+      </colgroup>
+      <thead>
+        <tr>
+          <th style="text-align:left;font-size:.8em;opacity:.7;padding:.2rem 0">Heading</th>
+          <th style="font-size:.8em;opacity:.7;text-align:center">Scene</th>
+          <th style="font-size:.8em;opacity:.7;text-align:center">Overview</th>
+          <th style="font-size:.8em;opacity:.7;text-align:center">Skip</th>
+        </tr>
+      </thead>
+      <tbody>
+        {{#each headings}}
+        <tr>
+          <td style="padding:.2rem 0;font-size:.85em">
+            {{text}}
+          </td>
+          <td style="text-align:center">
+            <input type="radio"
+              name="scene-role-{{../chapterId}}-{{@index}}"
+              data-chapter-id="{{../chapterId}}"
+              data-heading="{{text}}"
+              value="include"
+              {{#if isInclude}}checked{{/if}}>
+          </td>
+          <td style="text-align:center">
+            <input type="radio"
+              name="scene-role-{{../chapterId}}-{{@index}}"
+              data-chapter-id="{{../chapterId}}"
+              data-heading="{{text}}"
+              value="overview"
+              {{#if isOverview}}checked{{/if}}>
+          </td>
+          <td style="text-align:center">
+            <input type="radio"
+              name="scene-role-{{../chapterId}}-{{@index}}"
+              data-chapter-id="{{../chapterId}}"
+              data-heading="{{text}}"
+              value="skip"
+              {{#if isSkip}}checked{{/if}}>
+          </td>
+        </tr>
+        {{/each}}
+      </tbody>
+    </table>
+    {{else}}
+    <p style="font-size:.85em;opacity:.6;margin:.25rem 0">No headings detected — the AI will determine scenes automatically.</p>
+    {{/if}}
+  </fieldset>
+  {{else}}
+  <p style="opacity:.6">No chapters to configure.</p>
+  {{/each}}
+
+  <div class="lw-nav lw-nav--between">
+    <button type="button" data-action="backToChapters">
+      <i class="fas fa-arrow-left"></i> Back
+    </button>
+    <button type="button" data-action="confirmScenes">
+      Continue <i class="fas fa-arrow-right"></i>
+    </button>
+  </div>
+</div>
