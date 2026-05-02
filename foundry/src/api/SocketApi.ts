@@ -1,6 +1,6 @@
 import { NAMESPACE, SOCKET_NAME } from '../definitions.js';
-import { ChatBubbleApi, ChatBubbleOptions } from '../modules/ChatBubbleApi.js';
-import { JournalApi } from '../modules/JournalApi.js';
+import { ChatBubbleApi, ChatBubbleOptions } from './ChatBubbleApi.js';
+import { JournalApi } from './JournalApi.js';
 import { JournalData, JournalPageData } from '../types';
 
 interface SocketRequest {

@@ -12,7 +12,14 @@ interface SituationAssessment {
   npcCandidates: Array<{ npc: string; topic: string }>;
 }
 
-type InteractPhase = 'idle' | 'assessing' | 'confirming' | 'responding' | 'done';
+type InteractPhase =
+  | 'idle'
+  | 'assessing'
+  | 'confirming'
+  | 'responding'
+  | 'done'
+  | 'asking'
+  | 'asked';
 
 interface AiGmWindowContext {
   loreIndexExists: boolean;
@@ -27,6 +34,7 @@ interface AiGmWindowContext {
   confirmedTopic: string;
   response: string;
   isStreaming: boolean;
+  questionText: string;
 }
 
 /**
@@ -49,6 +57,7 @@ export class AiGmWindow extends foundry.applications.api.HandlebarsApplicationMi
       stop: AiGmWindow._onStop,
       openSettings: AiGmWindow._onOpenSettings,
       openAdventureSetup: AiGmWindow._onOpenAdventureSetup,
+      send: AiGmWindow._onSend,
     },
   };
 
@@ -66,6 +75,7 @@ export class AiGmWindow extends foundry.applications.api.HandlebarsApplicationMi
 
   private _selectedChapter = '';
   private _selectedScene = '';
+  private _questionText = '';
   private _phase: InteractPhase = 'idle';
   private _assessment: SituationAssessment | null = null;
   private _confirmedScene = '';
@@ -121,6 +131,7 @@ export class AiGmWindow extends foundry.applications.api.HandlebarsApplicationMi
       confirmedTopic: this._confirmedTopic,
       response: this._response,
       isStreaming: this._isStreaming,
+      questionText: this._questionText,
     };
   }
 
@@ -133,16 +144,23 @@ export class AiGmWindow extends foundry.applications.api.HandlebarsApplicationMi
       void this.render({ force: true });
     });
 
-    // Scene select — update state on change
+    // Scene select — update state and re-render so Send button enables/disables
     const sceneSelect = this.element?.querySelector<HTMLSelectElement>('#ai-scene-select');
     sceneSelect?.addEventListener('change', (e) => {
       this._selectedScene = (e.target as HTMLSelectElement).value;
+      void this.render();
     });
 
     // Scene override input in the confirmation card
     const sceneInput = this.element?.querySelector<HTMLInputElement>('#ai-confirmed-scene');
     sceneInput?.addEventListener('change', (e) => {
       this._confirmedScene = (e.target as HTMLInputElement).value.trim();
+    });
+
+    // Question textarea — keep state in sync (no re-render needed)
+    const questionArea = this.element?.querySelector<HTMLTextAreaElement>('#ai-question-input');
+    questionArea?.addEventListener('input', (e) => {
+      this._questionText = (e.target as HTMLTextAreaElement).value;
     });
   }
 
@@ -263,6 +281,49 @@ Include 1-3 npcCandidates ranked by likelihood. Use names exactly as they appear
     LoreIndexWizard.open();
   }
 
+  /** Send a typed question using the selected chapter + scene as lore context. */
+  static async _onSend(this: AiGmWindow): Promise<void> {
+    if (!this._selectedScene || !this._questionText.trim()) return;
+
+    const context = this._buildSceneContext();
+    if (!context) {
+      ui.notifications.warn('Could not load scene context.');
+      return;
+    }
+
+    this._phase = 'asking';
+    this._response = '';
+    this._abortController = new AbortController();
+    await this.render();
+
+    const systemPrompt = `You are a TTRPG GM assistant. Answer the GM's question concisely and accurately using only the provided adventure lore context.`;
+    const userPrompt = `${context}\n\n---\n\n${this._questionText.trim()}`;
+
+    try {
+      await AiService.create(game as unknown as GameData).stream(
+        systemPrompt,
+        userPrompt,
+        (chunk, type) => {
+          if (type !== 'content') return;
+          this._response += chunk;
+          const el = this.element?.querySelector('.beavers-ai-response');
+          if (el) el.textContent = this._response;
+        },
+        { max_tokens: 1024, signal: this._abortController.signal },
+      );
+      this._phase = 'asked';
+    } catch (err) {
+      if ((err as DOMException).name !== 'AbortError') {
+        ui.notifications.error(`Question failed: ${(err as Error).message}`);
+      }
+      this._phase = 'idle';
+    } finally {
+      this._abortController = null;
+    }
+
+    await this.render();
+  }
+
   // ---------------------------------------------------------------------------
   // Private helpers
   // ---------------------------------------------------------------------------
@@ -324,6 +385,46 @@ Do not include stage directions or out-of-character notes.`;
     }
 
     await this.render();
+  }
+
+  /** Raw text from a journal page (markdown-format preferred, HTML stripped otherwise). */
+  private _pageText(page: any): string {
+    if (page.text?.format === 2 && page.text.markdown) return page.text.markdown as string;
+    return ((page.text?.content as string) ?? '').replace(/<[^>]*>/g, '').trim();
+  }
+
+  /**
+   * Build a focused lore context string from the selected chapter's Summary page
+   * and the selected scene's lore page — used by the Send (direct-question) flow.
+   */
+  private _buildSceneContext(): string | null {
+    const loreFolder = this._getLoreIndexFolder();
+    if (!loreFolder || !this._selectedChapter || !this._selectedScene) return null;
+
+    const chapterJournal = (game.journal as any)?.find(
+      (j: any) => j.folder?.id === loreFolder.id && j.name === this._selectedChapter,
+    );
+    if (!chapterJournal) return null;
+
+    const parts: string[] = [];
+
+    const summaryPage = (chapterJournal.pages.contents as any[]).find(
+      (p: any) => p.name === 'Summary',
+    );
+    if (summaryPage) {
+      const text = this._pageText(summaryPage);
+      if (text) parts.push(`## Chapter: ${this._selectedChapter}\n${text}`);
+    }
+
+    const scenePage = (chapterJournal.pages.contents as any[]).find(
+      (p: any) => p.name === `Scene: ${this._selectedScene}`,
+    );
+    if (scenePage) {
+      const text = this._pageText(scenePage);
+      if (text) parts.push(`## Scene: ${this._selectedScene}\n${text}`);
+    }
+
+    return parts.length > 0 ? parts.join('\n\n---\n\n') : null;
   }
 
   /** Find the lore-index subfolder inside the beavers-ai-assistant module folder. */

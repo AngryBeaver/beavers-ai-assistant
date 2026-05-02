@@ -31,10 +31,6 @@
     {{!-- Bordered context box, ~400px, shows phase content --}}
     <div class="beavers-ai-context">
 
-      {{#if (eq phase "idle")}}
-      {{!-- empty / waiting --}}
-      {{/if}}
-
       {{#if (eq phase "assessing")}}
       <div class="beavers-ai-status">
         <i class="fas fa-spinner fa-spin"></i> Assessing situation&hellip;
@@ -82,10 +78,28 @@
       <div class="beavers-ai-response">{{response}}</div>
       {{/if}}
 
+      {{#if (eq phase "asking")}}
+      <div class="beavers-ai-response-header">
+        <i class="fas fa-spinner fa-spin" style="opacity:.6"></i>
+      </div>
+      <div class="beavers-ai-response"></div>
+      {{/if}}
+
+      {{#if (eq phase "asked")}}
+      <div class="beavers-ai-response">{{response}}</div>
+      {{/if}}
+
     </div>{{!-- .beavers-ai-context --}}
 
-    {{!-- Button row --}}
+    {{!-- Question textarea: same width as context box, 200px tall --}}
+    <textarea id="ai-question-input" class="beavers-ai-question"
+      placeholder="Ask a question about the selected scene…">{{questionText}}</textarea>
+
+    {{!-- Button row: Send always first --}}
     <div class="beavers-ai-controls">
+      <button type="button" data-action="send" {{#unless selectedScene}}disabled{{/unless}}>
+        <i class="fas fa-paper-plane"></i> Send
+      </button>
       {{#if (eq phase "idle")}}
       <button type="button" data-action="interact" {{#unless loreIndexExists}}disabled{{/unless}}>
         <i class="fas fa-comments"></i> Interact
@@ -106,12 +120,17 @@
         <i class="fas fa-stop"></i> Stop
       </button>
       {{/if}}
+      {{#if (eq phase "asking")}}
+      <button type="button" data-action="stop">
+        <i class="fas fa-stop"></i> Stop
+      </button>
+      {{/if}}
       {{#if (eq phase "done")}}
       <button type="button" data-action="retry">
         <i class="fas fa-rotate"></i> Retry
       </button>
       <button type="button" data-action="accept">
-        <i class="fas fa-check"></i> Send
+        <i class="fas fa-check"></i> Accept
       </button>
       {{/if}}
     </div>

@@ -136,11 +136,11 @@ export class JournalApi {
     if (!page) {
       // @ts-ignore
       await journal.createEmbeddedDocuments('JournalEntryPage', [
-        { name: 'Transcript', type: 'text', text: { markdown: line, format: 2 } },
+        { name: 'Transcript', type: 'text', text: { content: line, format: 2 } },
       ]);
     } else {
-      const existing = page.text?.markdown ?? '';
-      await page.update({ 'text.format': 2, 'text.markdown': existing + line });
+      const existing = page.text?.content ?? '';
+      await page.update({ 'text.format': 2, 'text.content': existing + line });
     }
   }
 

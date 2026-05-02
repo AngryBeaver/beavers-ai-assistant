@@ -1,8 +1,8 @@
 import { AI_ASSISTANT_USER_NAME, NAMESPACE, SETTINGS } from './definitions.js';
 import { Settings as ApiSettings } from './apps/settings/Settings.js';
 import { AiGmWindow } from './apps/AiGmWindow.js';
-import { ChatBubbleApi } from './modules/ChatBubbleApi.js';
-import { JournalApi } from './modules/JournalApi.js';
+import { ChatBubbleApi } from './api/ChatBubbleApi.js';
+import { JournalApi } from './api/JournalApi.js';
 import { SocketApi } from './api/SocketApi.js';
 
 Hooks.once('init', async function () {

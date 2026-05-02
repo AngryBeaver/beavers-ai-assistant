@@ -6,7 +6,7 @@ import {
 } from '../definitions.js';
 import { AiService, CallOptions } from '../services/AiService.js';
 import { GameData } from './ContextBuilder.js';
-import { JournalApi } from './JournalApi.js';
+import { JournalApi } from '../api/JournalApi.js';
 import { ChapterCandidate, ChapterContentParser } from './JournalParser/index.js';
 import { stripHtml, unescapeHtml } from './loreIndexUtils.js';
 import type { EnrichmentScene, NamedImage } from './EnrichmentPassRunner.js';
