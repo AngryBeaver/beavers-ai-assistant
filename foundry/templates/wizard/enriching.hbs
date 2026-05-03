@@ -2,90 +2,96 @@
 
   {{#if phaseTitle}}<p class="lw-phase-title">{{phaseTitle}}</p>{{/if}}
 
-  {{!-- Header --}}
+  {{!-- PRE_CHAPTER: show all scenes with per-scene image pickers --}}
+  {{#if enrichment.isPreChapter}}
+
   <p class="lw-intro" style="margin-top:0">
-    {{#if enrichment.isComplete}}
-      <i class="fas fa-circle-check" style="color:var(--color-level-success,#28a745)"></i>
-      Map enrichment complete
-    {{else if enrichment.isRunning}}
-      <i class="fas fa-spinner fa-spin"></i>
-      Enriching scene…
-    {{else}}
-      Scene {{enrichment.sceneIdx}} of {{enrichment.totalScenes}} —
-      <strong>{{enrichment.sceneName}}</strong>
-      {{#if enrichment.chapterName}}
-        <span style="opacity:.65;font-size:.9em">({{enrichment.chapterName}})</span>
-      {{/if}}
-    {{/if}}
+    Chapter {{enrichment.chapterIdx}} of {{enrichment.totalChapters}} —
+    <strong>{{enrichment.chapterName}}</strong>
   </p>
 
-  {{!-- Error banner --}}
   {{#if enrichment.error}}
   <div class="lw-alert lw-alert--error" style="margin-bottom:.75rem">
     <i class="fas fa-circle-exclamation"></i> {{enrichment.error}}
   </div>
   {{/if}}
 
-  {{!-- PRE_SCENE --}}
-  {{#if enrichment.isPreScene}}
+  {{#if enrichment.scenes}}
+    {{#each enrichment.scenes}}
+    <div style="margin-bottom:1rem;border-top:1px solid var(--color-border-light-primary,#ccc);padding-top:.75rem">
 
-    {{#if enrichment.hasConnections}}
-    <div class="lw-alert lw-alert--info" style="margin-bottom:.75rem">
-      <i class="fas fa-circle-info"></i> Map connections already exist for this scene.
-    </div>
-    {{/if}}
+      <p style="font-weight:bold;margin:0 0 .25rem">
+        {{sceneName}}
+        {{#if hasConnections}}
+        <span style="font-size:.8em;font-weight:normal;color:var(--color-level-warning,#b87800)">
+          <i class="fas fa-triangle-exclamation"></i> connections exist
+        </span>
+        {{/if}}
+      </p>
 
-    {{!-- Image candidates --}}
-    {{#if enrichment.images}}
-    <p style="font-size:.875em;margin:.25rem 0 .5rem">Select a map image:</p>
-    <div class="lw-image-grid">
-      {{#each enrichment.images}}
-      <label class="lw-image-option">
-        <input type="radio" name="enrichment-image" value="{{url}}"
-               {{#if (eq url ../enrichment.selectedImageUrl)}}checked{{/if}}>
-        <img src="{{url}}" class="lw-image-thumb" alt="{{name}}" loading="lazy"
-             title="{{name}}">
-        <span class="lw-image-name">{{name}}</span>
+      {{#if images}}
+      <div class="lw-image-grid" style="margin:.25rem 0">
+        {{#each images}}
+        <label class="lw-image-option">
+          <input type="radio" name="enrichment-image-{{../sceneIdx}}"
+                 data-scene-name="{{../sceneName}}" value="{{url}}"
+                 {{#if (eq url ../selectedImageUrl)}}checked{{/if}}>
+          <img src="{{url}}" class="lw-image-thumb" alt="{{name}}" loading="lazy" title="{{name}}">
+          <span class="lw-image-name">{{name}}</span>
+        </label>
+        {{/each}}
+      </div>
+      <label style="font-size:.875em;display:inline-flex;align-items:center;gap:.3rem;margin-top:.2rem">
+        <input type="checkbox" data-scene-name="{{sceneName}}" data-skip="true">
+        Skip this scene
       </label>
-      {{/each}}
-    </div>
-    {{else}}
-    <p style="font-size:.875em;opacity:.75">No candidate images found for this chapter.</p>
-    {{/if}}
+      {{else}}
+      <p style="font-size:.875em;opacity:.65;margin:.2rem 0">
+        No images found — scene will be skipped.
+      </p>
+      {{/if}}
 
-    {{!-- Buttons — split by whether connections already exist --}}
-    {{#if enrichment.hasConnections}}
-    <div class="lw-nav" style="gap:.5rem;flex-wrap:wrap">
-      <button type="button" data-action="enrichReplaceScene"
-              style="flex:1" {{#unless enrichment.hasSelectedImage}}disabled{{/unless}}>
-        <i class="fas fa-rotate"></i> Replace connections
-      </button>
-      <button type="button" data-action="enrichAddScene"
-              {{#unless enrichment.hasSelectedImage}}disabled{{/unless}}>
-        <i class="fas fa-plus"></i> Add to existing
-      </button>
-      <button type="button" data-action="enrichSkipScene">Skip — keep current</button>
-      <button type="button" data-action="stopEnrichment">Stop enrichment</button>
     </div>
-    {{else}}
-    <div class="lw-nav" style="gap:.5rem">
-      <button type="button" data-action="enrichReplaceScene"
-              style="flex:1" {{#unless enrichment.hasSelectedImage}}disabled{{/unless}}>
-        <i class="fas fa-map"></i> Use selected image
-      </button>
-      <button type="button" data-action="enrichSkipScene">Skip this scene</button>
-      <button type="button" data-action="stopEnrichment">Stop enrichment</button>
-    </div>
-    {{/if}}
+    {{/each}}
+  {{else}}
+  <p style="opacity:.75">No scenes found in this chapter.</p>
+  {{/if}}
+
+  <div class="lw-nav" style="gap:.5rem;flex-wrap:wrap;margin-top:.75rem">
+    <button type="button" data-action="enrichChapter" style="flex:1">
+      <i class="fas fa-map"></i> Enrich Chapter
+    </button>
+    <button type="button" data-action="skipChapter">
+      Skip Chapter
+    </button>
+    <button type="button" data-action="stopEnrichment">Stop</button>
+  </div>
 
   {{/if}}
 
   {{!-- RUNNING: live log --}}
   {{#if enrichment.isRunning}}
+
+  <p class="lw-intro" style="margin-top:0">
+    <i class="fas fa-spinner fa-spin"></i>
+    Scene {{enrichment.runningIdx}} of {{enrichment.runningTotal}} in
+    <strong>{{enrichment.chapterName}}</strong>
+  </p>
+  {{#if enrichment.runningSceneName}}
+  <p style="font-size:.875em;opacity:.75;margin:.1rem 0 .5rem">
+    <em>{{enrichment.runningSceneName}}</em>
+  </p>
+  {{/if}}
+
+  {{#if enrichment.error}}
+  <div class="lw-alert lw-alert--error" style="margin-bottom:.5rem">
+    <i class="fas fa-circle-exclamation"></i> {{enrichment.error}}
+  </div>
+  {{/if}}
+
   <div id="enrichment-log"
        style="font-family:monospace;font-size:.85em;padding:.5rem .75rem;
-              background:rgba(0,0,0,0.1);color:#111;
-              border:1px solid var(--color-border-light-primary,#ccc);
+              background:rgba(0,0,0,0.9);color:#ccc;
               border-radius:4px;min-height:4rem;max-height:12rem;overflow-y:auto">
     {{#each enrichment.log}}
     <div>{{this}}</div>
@@ -96,10 +102,48 @@
       <i class="fas fa-stop"></i> Cancel
     </button>
   </div>
+
+  {{/if}}
+
+  {{!-- POST_CHAPTER: summary after chapter batch completes --}}
+  {{#if enrichment.isPostChapter}}
+
+  <p class="lw-intro" style="margin-top:0">
+    <i class="fas fa-circle-check" style="color:var(--color-level-success,#28a745)"></i>
+    Chapter <strong>{{enrichment.chapterName}}</strong> done
+    ({{enrichment.chapterIdx}} of {{enrichment.totalChapters}})
+  </p>
+
+  {{#if enrichment.error}}
+  <div class="lw-alert lw-alert--error" style="margin-bottom:.5rem">
+    <i class="fas fa-circle-exclamation"></i> {{enrichment.error}}
+  </div>
+  {{/if}}
+
+  <div style="font-family:monospace;font-size:.85em;padding:.5rem .75rem;
+              background:rgba(0,0,0,0.9);color:#ccc;
+              border-radius:4px;min-height:2rem;max-height:10rem;overflow-y:auto">
+    {{#each enrichment.log}}
+    <div>{{this}}</div>
+    {{/each}}
+  </div>
+
+  <div class="lw-nav" style="gap:.5rem;margin-top:.75rem">
+    <button type="button" data-action="continueEnrichment" style="flex:1">
+      <i class="fas fa-arrow-right"></i> Continue
+    </button>
+    <button type="button" data-action="stopEnrichment">Stop Here</button>
+  </div>
+
   {{/if}}
 
   {{!-- COMPLETE --}}
   {{#if enrichment.isComplete}}
+
+  <p class="lw-intro" style="margin-top:0">
+    <i class="fas fa-circle-check" style="color:var(--color-level-success,#28a745)"></i>
+    Map enrichment complete
+  </p>
   <p>
     {{enrichment.enrichedCount}}
     {{#if (eq enrichment.enrichedCount 1)}}scene{{else}}scenes{{/if}}
@@ -110,6 +154,7 @@
       <i class="fas fa-circle-check"></i> Finish
     </button>
   </div>
+
   {{/if}}
 
 </div>

@@ -8,8 +8,9 @@ import { AiService, CallOptions } from '../services/AiService.js';
 import { GameData } from './ContextBuilder.js';
 import { JournalApi } from '../api/JournalApi.js';
 import { ChapterCandidate, ChapterContentParser } from './JournalParser/index.js';
-import { stripHtml, unescapeHtml } from './loreIndexUtils.js';
-import type { EnrichmentScene, NamedImage } from './EnrichmentPassRunner.js';
+import { stripHtml, pageText } from './loreIndexUtils.js';
+import type { EnrichmentChapter, EnrichmentScene } from './MapEnrichment/index.js';
+import { MapImageCollector } from './MapEnrichment/index.js';
 import type { LoreIndex, LoreChapter, LoreScene } from '../apps/LoreIndexWizard.types.js';
 
 const LORE_INDEX_RECORD_JOURNAL = '_index';
@@ -64,8 +65,7 @@ export class LoreIndexBuilder {
     );
     if (!page) return null;
     try {
-      const raw = stripHtml(page.text?.content ?? '').trim();
-      return JSON.parse(raw) as LoreIndex;
+      return JSON.parse(pageText(page)) as LoreIndex;
     } catch {
       return null;
     }
@@ -83,8 +83,8 @@ export class LoreIndexBuilder {
       }));
     await JournalApi.writeJournalPage(journal.id as string, {
       name: LORE_INDEX_RECORD_PAGE,
-      type: 'text',
-      text: { content: `<pre>${JSON.stringify(index, null, 2)}</pre>`, format: 1 },
+      text: '<pre>' + JSON.stringify(index, null, 2) + '</pre>',
+      format: 'html',
     });
   }
 
@@ -107,11 +107,10 @@ export class LoreIndexBuilder {
         (p: any) => p.id === loreScene.lorePageId,
       );
       if (!page) return '';
-      return stripHtml(page.text?.content ?? '').trim();
+      return pageText(page).trim();
     }
 
     // Source mode: re-parse the chapter and filter to the scene's headings
-    const parser = new ChapterContentParser(this.#game);
     const candidate: ChapterCandidate = {
       id: loreChapter.sourceId,
       name: loreChapter.sourceName,
@@ -119,33 +118,7 @@ export class LoreIndexBuilder {
       role: 'chapter',
       tokens: 0,
     };
-    const fullMd = parser.parse(candidate);
-    if (!loreScene.headings.length) return fullMd;
-
-    // Extract only the sections whose heading matches the scene's heading list
-    const lines = fullMd.split('\n');
-    const included: string[] = [];
-    let inSection = false;
-    let sectionLevel = 0;
-    for (const line of lines) {
-      const hm = line.match(/^(#{1,6})\s+(.+)$/);
-      if (hm) {
-        const lvl = hm[1].length;
-        const txt = hm[2].trim();
-        if (loreScene.headings.some((h) => h === txt)) {
-          inSection = true;
-          sectionLevel = lvl;
-          included.push(line);
-        } else if (inSection && lvl <= sectionLevel) {
-          inSection = false;
-        } else if (inSection) {
-          included.push(line);
-        }
-      } else if (inSection) {
-        included.push(line);
-      }
-    }
-    return included.join('\n').trim();
+    return new ChapterContentParser(this.#game).parseScene(candidate, loreScene.headings);
   }
 
   /**
@@ -267,8 +240,7 @@ Rules:
     // Write placeholder Summary page first so it appears as the first page in the journal
     await JournalApi.writeJournalPage(chapterJournal.id, {
       name: 'Summary',
-      type: 'text',
-      text: { markdown: '*(indexing…)*', format: 2 },
+      text: '*(indexing…)*',
     });
 
     onProgress(`→ Sending to AI…`);
@@ -291,8 +263,7 @@ Rules:
         writeChain = writeChain.then(async () => {
           await JournalApi.writeJournalPage(chapterJournal.id, {
             name: `Scene: ${name}`,
-            type: 'text',
-            text: { markdown: text, format: 2 },
+            text,
           });
           onProgress(`  ✓ Scene: ${name}`);
           sceneCount++;
@@ -341,8 +312,7 @@ Rules:
     if (chapterSummary) {
       await JournalApi.writeJournalPage(chapterJournal.id, {
         name: 'Summary',
-        type: 'text',
-        text: { markdown: chapterSummary, format: 2 },
+        text: chapterSummary,
       });
       onProgress(`  ✓ Chapter summary written.`);
     }
@@ -396,8 +366,7 @@ Rules:
 
     await JournalApi.writeJournalPage(overviewJournal.id, {
       name: 'Overview',
-      type: 'text',
-      text: { markdown: overview, format: 2 },
+      text: overview,
     });
   }
 
@@ -450,7 +419,7 @@ Rules:
     for (const journal of journals) {
       const summaryPage = (journal.pages.contents as any[]).find((p: any) => p.name === 'Summary');
       if (summaryPage) {
-        const text = stripHtml(summaryPage.text?.content ?? '').trim();
+        const text = pageText(summaryPage).trim();
         if (text) summaries.push(`## ${journal.name}\n${text}`);
       }
     }
@@ -462,143 +431,71 @@ Rules:
   // ---------------------------------------------------------------------------
 
   /**
-   * Collect all indexed scenes and their candidate map images.
+   * Build the chapter-by-chapter enrichment queue from the stored LoreIndex record.
    *
-   * Images are filtered to the same chapter as each scene — only images from
-   * the chapter's source journals/folders are offered as candidates.
-   *
-   * @param chapters  Confirmed chapter candidates (from the wizard). When empty
-   *                  (e.g. launched directly from location step) falls back to
-   *                  scanning all images from the fallback location.
-   * @param fallbackLocationId   Adventure location used when chapters is empty.
-   * @param fallbackLocationType Adventure location type used when chapters is empty.
+   * For each chapter in the index (role !== 'skip'), collects candidate map images
+   * from the chapter's source content and pairs them with each indexed scene page.
    */
-  collectEnrichmentScenes(
-    chapters: ChapterCandidate[],
-    fallbackLocationId: string,
-    fallbackLocationType: 'folder' | 'journal',
-  ): EnrichmentScene[] {
-    const loreFolder = this._getLoreIndexFolder();
-    if (!loreFolder) return [];
+  async collectEnrichmentChapters(): Promise<EnrichmentChapter[]> {
+    const index = await this.readIndex();
+    if (!index) return [];
 
-    const chapterJournals: any[] =
-      (this.#game as any).journal?.filter(
-        (j: any) => j.folder?.id === loreFolder.id && j.name !== 'Overview',
-      ) ?? [];
+    const chapters: EnrichmentChapter[] = [];
 
-    // Collect images per chapter from source
-    const chapterImagesMap = new Map<string, NamedImage[]>();
-    for (const chapter of chapters) {
-      chapterImagesMap.set(chapter.name, this._collectImagesForChapter(chapter));
-    }
+    for (const loreChapter of index.chapters) {
+      if (loreChapter.role === 'skip') continue;
+      const loreScenes = index.scenes[loreChapter.loreJournalId] ?? [];
+      if (loreScenes.length === 0) continue;
 
-    // Fallback images when no chapter candidates available
-    const fallbackImages: NamedImage[] =
-      chapters.length === 0
-        ? this._collectAdventureImages(fallbackLocationId, fallbackLocationType).map((url) => ({
-            url,
-            name: url.split('/').pop()?.split('?')[0] ?? url,
-          }))
-        : [];
+      const chapterCandidate: ChapterCandidate = {
+        id: loreChapter.sourceId,
+        name: loreChapter.sourceName,
+        sourceType: loreChapter.sourceType,
+        role: 'chapter',
+        tokens: 0,
+      };
+      const images = new MapImageCollector(this.#game as any).collectForChapter(chapterCandidate);
+      const parser = new ChapterContentParser(this.#game as any);
 
-    // Build one entry per Scene page across all chapter journals
-    const scenes: EnrichmentScene[] = [];
-    for (const journal of chapterJournals) {
-      const chapterName = journal.name as string;
-      const images = chapterImagesMap.get(chapterName) ?? fallbackImages;
-      for (const p of journal.pages.contents as any[]) {
-        if (!p.name?.startsWith('Scene: ')) continue;
-        const sceneName = (p.name as string).replace('Scene: ', '');
-        const pageText = stripHtml(p.text?.content ?? '');
-        const hasConnections = pageText.includes('#### Connections');
-        scenes.push({ sceneName, chapterName, images, hasConnections });
+      const journal = (this.#game as any).journal?.find(
+        (j: any) => j.id === loreChapter.loreJournalId,
+      );
+
+      const scenes: EnrichmentScene[] = loreScenes
+        .filter((s) => s.role !== 'skip')
+        .map((s) => {
+          let hasConnections = false;
+          if (journal) {
+            const page = (journal.pages.contents as any[]).find(
+              (p: any) => p.name === `Scene: ${s.name}`,
+            );
+            if (page) {
+              hasConnections = pageText(page).includes('#### Connections');
+            }
+          }
+          return {
+            sceneName: s.name,
+            chapterName: loreChapter.loreJournalName,
+            images,
+            hasConnections,
+            sourceText: parser.parseScene(chapterCandidate, [s.name]),
+          };
+        });
+
+      if (scenes.length > 0) {
+        chapters.push({
+          chapterName: loreChapter.loreJournalName,
+          loreJournalId: loreChapter.loreJournalId,
+          scenes,
+        });
       }
     }
 
-    return scenes;
-  }
-
-  /**
-   * Run the vision AI call for one scene and write the `#### Connections` section.
-   *
-   * @param sceneName   Name of the `Scene: <name>` page to update.
-   * @param imageUrl    URL of the map image to analyse.
-   * @param mode        'replace' removes any existing Connections block first;
-   *                    'add' appends after any existing block.
-   * @param callOptions Model / token options (model required for LocalAI).
-   * @param onProgress  Callback for log lines shown in the wizard.
-   */
-  async enrichSceneWithMap(
-    sceneName: string,
-    imageUrl: string,
-    mode: 'replace' | 'add',
-    callOptions: CallOptions,
-    onProgress: (line: string) => void,
-  ): Promise<void> {
-    if (!this.#aiService.callWithImage) {
-      throw new Error('The selected AI provider does not support vision calls.');
-    }
-
-    // Read current scene page
-    const currentText = this._readScenePageText(sceneName);
-    if (currentText === null) {
-      throw new Error(`Scene page not found: "Scene: ${sceneName}"`);
-    }
-
-    const systemPrompt = `You are analysing a tabletop RPG map image to extract spatial connections between numbered or lettered areas.
-
-Output ONLY a markdown Connections block in this exact format:
-
-#### Connections
-
-- \`A -> B\` : door
-- \`B -> C\` : open
-- \`C -> lower-level\` : ladder  *(one-way down)*
-
-Connection types: open, door, hidden-door, ladder, stairs, secret-passage.
-Add a note in italics only when meaningful (e.g. one-way, locked, DC value, key location).
-Symmetric connections are written once. Write nothing else — no prose, no headings other than #### Connections.`;
-
-    const userPrompt = `Here is the complete description of the scene from the lore index:\n\n${currentText}\n\nUsing the scene description above and the map image, output ONLY the Connections block.`;
-
-    onProgress(`  → Calling vision AI…`);
-
-    const result = await this.#aiService.callWithImage(systemPrompt, userPrompt, imageUrl, {
-      ...callOptions,
-      max_tokens: 8192,
-    });
-
-    onProgress(`  → Writing connections…`);
-
-    // Build updated page text
-    let updatedText = currentText;
-    if (mode === 'replace') {
-      // Remove existing Connections block
-      updatedText = updatedText.replace(
-        /\n?#### Connections\n[\s\S]*?(?=\n#### |\n---|\n##|$)/,
-        '',
-      );
-    }
-
-    // Ensure the connections block starts on a new line
-    const connections = result.trim().startsWith('#### Connections')
-      ? result.trim()
-      : `#### Connections\n\n${result.trim()}`;
-    updatedText = updatedText.trimEnd() + '\n\n' + connections;
-
-    const sceneJournalId = this._findJournalForScene(sceneName);
-    if (!sceneJournalId) throw new Error(`Scene journal not found for: "Scene: ${sceneName}"`);
-    await JournalApi.writeJournalPage(sceneJournalId, {
-      name: `Scene: ${sceneName}`,
-      type: 'text',
-      text: { markdown: updatedText, format: 2 },
-    });
-
-    onProgress(`  ✓ Connections written.`);
+    return chapters;
   }
 
   // ---------------------------------------------------------------------------
-  // Private — enrichment helpers
+  // Private helpers
   // ---------------------------------------------------------------------------
 
   private _getLoreIndexFolder(): any | null {
@@ -614,156 +511,6 @@ Symmetric connections are written once. Write nothing else — no prose, no head
           f.folder?.id === modFolder.id,
       ) ?? null
     );
-  }
-
-  private _findJournalForScene(sceneName: string): string | null {
-    const loreFolder = this._getLoreIndexFolder();
-    if (!loreFolder) return null;
-    const journals: any[] =
-      (this.#game as any).journal?.filter((j: any) => j.folder?.id === loreFolder.id) ?? [];
-    for (const journal of journals) {
-      const page = (journal.pages.contents as any[]).find(
-        (p: any) => p.name === `Scene: ${sceneName}`,
-      );
-      if (page) return journal.id as string;
-    }
-    return null;
-  }
-
-  private _readScenePageText(sceneName: string): string | null {
-    const journalId = this._findJournalForScene(sceneName);
-    if (!journalId) return null;
-    const journal = (this.#game as any).journal?.get(journalId);
-    if (!journal) return null;
-    const page = (journal.pages.contents as any[]).find(
-      (p: any) => p.name === `Scene: ${sceneName}`,
-    );
-    if (!page) return null;
-    const html: string = page.text?.content ?? '';
-    const inner = html.replace(/^<div>([\s\S]*)<\/div>$/, '$1');
-    return unescapeHtml(inner);
-  }
-
-  /**
-   * Extract all images from a chapter's source content, with names derived from:
-   * alt text → figcaption → nearest heading before the image → page name.
-   */
-  private _collectImagesForChapter(chapter: ChapterCandidate): NamedImage[] {
-    const images: NamedImage[] = [];
-    const journals: any[] = [];
-
-    if (chapter.sourceType === 'folder') {
-      this._collectJournalsInFolder(chapter.id, journals);
-    } else if (chapter.sourceType === 'journal') {
-      const j = (this.#game as any).journal?.find((j: any) => j.id === chapter.id);
-      if (j) journals.push(j);
-    } else if (chapter.sourceType === 'page') {
-      const journalId = chapter.id.split('::page::')[0];
-      const j = (this.#game as any).journal?.find((j: any) => j.id === journalId);
-      if (j) journals.push(j);
-    }
-
-    for (const journal of journals) {
-      for (const page of journal.pages.contents as any[]) {
-        if (page.type === 'image' && page.src) {
-          images.push({ url: page.src as string, name: (page.name as string) || journal.name });
-        }
-        const html: string = page.text?.content ?? '';
-        images.push(...this._extractImagesWithNames(html, (page.name as string) || journal.name));
-      }
-    }
-
-    // Deduplicate by URL, preserving first occurrence
-    const seen = new Set<string>();
-    return images.filter((img) => {
-      if (seen.has(img.url)) return false;
-      seen.add(img.url);
-      return true;
-    });
-  }
-
-  /**
-   * Scan HTML content for <img> tags and return each with a derived name.
-   * Priority: alt attribute → <figcaption> immediately after → nearest preceding
-   * heading → fallback (page/journal name passed in).
-   */
-  private _extractImagesWithNames(html: string, fallback: string): NamedImage[] {
-    const results: NamedImage[] = [];
-    let lastHeading = fallback;
-
-    const tokenRe =
-      /<(h[1-6])[^>]*>[\s\S]*?<\/\1>|<img\s[^>]*\/?>|<figcaption[^>]*>[\s\S]*?<\/figcaption>/gi;
-
-    let lastImgIdx = -1;
-
-    for (const match of html.matchAll(tokenRe)) {
-      const tag = match[0];
-
-      if (/^<h[1-6]/i.test(tag)) {
-        lastHeading = stripHtml(tag).trim() || lastHeading;
-        lastImgIdx = -1;
-      } else if (/^<img/i.test(tag)) {
-        const srcMatch = tag.match(/src=["']([^"']+)["']/i);
-        if (!srcMatch) continue;
-        const url = srcMatch[1];
-        const altMatch = tag.match(/alt=["']([^"']*?)["']/i);
-        const alt = altMatch?.[1]?.trim() ?? '';
-        results.push({ url, name: alt || lastHeading });
-        lastImgIdx = results.length - 1;
-      } else if (/^<figcaption/i.test(tag) && lastImgIdx >= 0) {
-        // Upgrade the immediately preceding image's name with the caption if its
-        // name is still just the heading fallback (alt was empty)
-        const caption = stripHtml(tag).trim();
-        if (caption && results[lastImgIdx].name === lastHeading) {
-          results[lastImgIdx] = { ...results[lastImgIdx], name: caption };
-        }
-        lastImgIdx = -1;
-      }
-    }
-
-    return results;
-  }
-
-  private _collectAdventureImages(
-    locationId: string,
-    locationType: 'folder' | 'journal',
-  ): string[] {
-    const urls: string[] = [];
-    const journals: any[] = [];
-
-    if (locationType === 'folder') {
-      this._collectJournalsInFolder(locationId, journals);
-    } else {
-      const j = (this.#game as any).journal?.find((j: any) => j.id === locationId);
-      if (j) journals.push(j);
-    }
-
-    for (const journal of journals) {
-      for (const page of journal.pages.contents as any[]) {
-        if (page.type === 'image' && page.src) {
-          urls.push(page.src as string);
-        }
-        const html: string = page.text?.content ?? '';
-        for (const match of html.matchAll(/<img[^>]+src=["']([^"']+)["']/gi)) {
-          urls.push(match[1]);
-        }
-      }
-    }
-
-    return [...new Set(urls)];
-  }
-
-  private _collectJournalsInFolder(folderId: string, out: any[]): void {
-    const journals =
-      (this.#game as any).journal?.filter((j: any) => j.folder?.id === folderId) ?? [];
-    out.push(...journals);
-    const subfolders =
-      (this.#game as any).folders?.filter(
-        (f: any) => f.folder?.id === folderId && f.type === 'JournalEntry',
-      ) ?? [];
-    for (const sf of subfolders) {
-      this._collectJournalsInFolder(sf.id, out);
-    }
   }
 
   // ---------------------------------------------------------------------------
@@ -863,11 +610,7 @@ Produce the index as markdown. Start directly with ## Part 1 or ## World if ther
         (j) => j.folder?.id === modFolder.id && j.name === LORE_INDEX_JOURNAL_NAME,
       );
 
-      const pageData = {
-        name: 'Index',
-        type: 'text' as const,
-        text: { markdown: indexContent, format: 2 as const },
-      };
+      const pageData = { name: 'Index', text: indexContent };
 
       if (!indexJournal) {
         await JournalApi.writeJournal({

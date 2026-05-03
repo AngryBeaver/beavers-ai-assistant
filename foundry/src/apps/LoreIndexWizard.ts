@@ -12,7 +12,7 @@ import type { ParsedChapter, ChapterRole } from '../modules/AdventureParser.js';
 import { JournalParser, type JournalChapterData } from '../modules/JournalParser/index.js';
 import { LoreIndexBuilder } from '../modules/LoreIndexBuilder.js';
 import { IndexingPassRunner } from '../modules/IndexingPassRunner.js';
-import { EnrichmentPassRunner } from '../modules/EnrichmentPassRunner.js';
+import { EnrichmentPassRunner, SceneEnricher } from '../modules/MapEnrichment/index.js';
 import { ChapterContentParser } from '../modules/JournalParser/index.js';
 import type {
   WizardStep,
@@ -20,6 +20,7 @@ import type {
   ModelContext,
   IndexingCtx,
   EnrichmentCtx,
+  EnrichmentSceneView,
   WizardContext,
   ChapterCandidateView,
   SceneChapterView,
@@ -62,7 +63,6 @@ export class LoreIndexWizard extends foundry.applications.api.HandlebarsApplicat
       // Indexing pass
       cancelIndexing: LoreIndexWizard._onCancelIndexing,
       indexThisChapter: LoreIndexWizard._onIndexThisChapter,
-      rebuildChapter: LoreIndexWizard._onRebuildChapter,
       skipThisChapter: LoreIndexWizard._onSkipThisChapter,
       continueIndexing: LoreIndexWizard._onContinueIndexing,
       skipNextChapter: LoreIndexWizard._onSkipNextChapter,
@@ -78,9 +78,9 @@ export class LoreIndexWizard extends foundry.applications.api.HandlebarsApplicat
       backFromVisionModel: LoreIndexWizard._onBackFromVisionModel,
       startEnrichment: LoreIndexWizard._onStartEnrichment,
       // Enrichment pass
-      enrichReplaceScene: LoreIndexWizard._onEnrichReplaceScene,
-      enrichAddScene: LoreIndexWizard._onEnrichAddScene,
-      enrichSkipScene: LoreIndexWizard._onEnrichSkipScene,
+      enrichChapter: LoreIndexWizard._onEnrichChapter,
+      skipChapter: LoreIndexWizard._onSkipChapter,
+      continueEnrichment: LoreIndexWizard._onContinueEnrichment,
       stopEnrichment: LoreIndexWizard._onStopEnrichment,
       finishEnrichment: LoreIndexWizard._onFinishEnrichment,
     },
@@ -117,7 +117,7 @@ export class LoreIndexWizard extends foundry.applications.api.HandlebarsApplicat
 
   // Enrichment pass state
   private readonly _enrichmentRunner = new EnrichmentPassRunner();
-  private _enrichmentSelectedImageUrl = '';
+  private _enrichmentImageSelections: Record<string, string> = {};
   private _enrichmentEntryPoint: 'indexing' | 'location' = 'indexing';
   private _estimatedEnrichmentScenes = 0;
 
@@ -177,7 +177,7 @@ export class LoreIndexWizard extends foundry.applications.api.HandlebarsApplicat
     if (this._step === 'indexing' && this._runner.phase === 'overview') {
       void this._runIndexingOverview();
     }
-    if (this._step === 'enriching' && this._enrichmentRunner.phase === 'pre_scene') {
+    if (this._step === 'enriching' && this._enrichmentRunner.phase === 'pre_chapter') {
       this._setupEnrichingImageListeners();
     }
   }
@@ -375,20 +375,46 @@ export class LoreIndexWizard extends foundry.applications.api.HandlebarsApplicat
   // ---------------------------------------------------------------------------
 
   private _setupEnrichingImageListeners(): void {
-    const radios = Array.from(
-      this.element.querySelectorAll<HTMLInputElement>('input[name="enrichment-image"]'),
-    );
-    // Auto-select the first image
-    if (radios.length > 0 && !radios.some((r) => r.checked)) {
-      radios[0].checked = true;
-      this._enrichmentSelectedImageUrl = radios[0].value;
-    }
-    for (const radio of radios) {
-      radio.addEventListener('change', () => {
-        this._enrichmentSelectedImageUrl = radio.value;
-        // Re-render to update disabled state of action buttons
-        this.render({ force: true });
-      });
+    const chapter = this._enrichmentRunner.currentChapter;
+    if (!chapter) return;
+
+    for (const scene of chapter.scenes) {
+      const escaped = CSS.escape(scene.sceneName);
+      const sceneRadios = Array.from(
+        this.element.querySelectorAll<HTMLInputElement>(
+          `input[data-scene-name="${escaped}"][type="radio"]`,
+        ),
+      );
+      const skipCb = this.element.querySelector<HTMLInputElement>(
+        `input[data-scene-name="${escaped}"][data-skip]`,
+      );
+
+      // Auto-select the first image if no selection stored yet
+      if (sceneRadios.length > 0 && !this._enrichmentImageSelections[scene.sceneName]) {
+        sceneRadios[0].checked = true;
+        this._enrichmentImageSelections[scene.sceneName] = sceneRadios[0].value;
+      }
+
+      for (const radio of sceneRadios) {
+        radio.addEventListener('change', () => {
+          if (radio.checked) {
+            this._enrichmentImageSelections[scene.sceneName] = radio.value;
+            if (skipCb) skipCb.checked = false;
+          }
+        });
+      }
+
+      if (skipCb) {
+        skipCb.addEventListener('change', () => {
+          if (skipCb.checked) {
+            delete this._enrichmentImageSelections[scene.sceneName];
+            for (const r of sceneRadios) r.checked = false;
+          } else if (sceneRadios.length > 0) {
+            sceneRadios[0].checked = true;
+            this._enrichmentImageSelections[scene.sceneName] = sceneRadios[0].value;
+          }
+        });
+      }
     }
   }
 
@@ -520,22 +546,29 @@ export class LoreIndexWizard extends foundry.applications.api.HandlebarsApplicat
 
   private _buildEnrichmentCtx(): EnrichmentCtx {
     const r = this._enrichmentRunner;
-    const scene = r.currentScene;
+    const chapter = r.currentChapter;
+    const scenes: EnrichmentSceneView[] = (chapter?.scenes ?? []).map((s, i) => ({
+      sceneName: s.sceneName,
+      sceneIdx: i,
+      hasConnections: s.hasConnections,
+      images: s.images,
+      selectedImageUrl: this._enrichmentImageSelections[s.sceneName] ?? '',
+    }));
     return {
       phase: r.phase,
-      sceneName: scene?.sceneName ?? '',
-      chapterName: scene?.chapterName ?? '',
-      images: scene?.images ?? [],
-      hasConnections: scene?.hasConnections ?? false,
-      sceneIdx: r.currentIdx + 1,
-      totalScenes: r.totalScenes,
+      chapterName: chapter?.chapterName ?? '',
+      chapterIdx: r.currentChapterIdx + 1,
+      totalChapters: r.totalChapters,
+      scenes,
       log: r.log,
       enrichedCount: r.enrichedCount,
       error: r.error,
-      selectedImageUrl: this._enrichmentSelectedImageUrl,
-      hasSelectedImage: !!this._enrichmentSelectedImageUrl,
-      isPreScene: r.phase === 'pre_scene',
+      runningSceneName: r.currentRunningScene?.scene.sceneName ?? '',
+      runningIdx: r.runningIdx + 1,
+      runningTotal: r.runningTotal,
+      isPreChapter: r.phase === 'pre_chapter',
       isRunning: r.phase === 'running',
+      isPostChapter: r.phase === 'post_chapter',
       isComplete: r.phase === 'complete',
     };
   }
@@ -836,9 +869,6 @@ export class LoreIndexWizard extends foundry.applications.api.HandlebarsApplicat
 
     this._saveModelPrefs();
 
-    const indexAllEl = this.element.querySelector<HTMLInputElement>('#wizard-index-all');
-    this._indexAll = indexAllEl?.checked ?? false;
-
     // Initialise lore index accumulator
     const loc = JournalParser.decodeLocation(this._parserFormValues);
     this._loreIndex = {
@@ -859,19 +889,10 @@ export class LoreIndexWizard extends foundry.applications.api.HandlebarsApplicat
   }
 
   static async _onIndexThisChapter(this: LoreIndexWizard): Promise<void> {
-    const chapter = this._runner.currentChapter;
-    if (!chapter) return;
-
-    if (this._createBuilder().isChapterIndexed(chapter.name)) {
-      this._runner.markAlreadyIndexed();
-      this.render({ force: true });
-      return;
-    }
-
-    await this._runChapterIndexing();
-  }
-
-  static async _onRebuildChapter(this: LoreIndexWizard): Promise<void> {
+    if (!this._runner.currentChapter) return;
+    const indexAllEl = this.element?.querySelector<HTMLInputElement>('#wizard-index-all');
+    this._indexAll = indexAllEl?.checked ?? false;
+    this._runner.setIndexAll(this._indexAll);
     await this._runChapterIndexing();
   }
 
@@ -940,14 +961,8 @@ export class LoreIndexWizard extends foundry.applications.api.HandlebarsApplicat
       await this._fetchModels();
     }
     try {
-      const loc = JournalParser.decodeLocation(this._parserFormValues);
-      const chapterData = this._chapters.map((c) => c.data as JournalChapterData);
-      const scenes = this._createBuilder().collectEnrichmentScenes(
-        chapterData,
-        loc?.id ?? '',
-        loc?.type ?? 'folder',
-      );
-      this._estimatedEnrichmentScenes = scenes.length;
+      const chapters = await this._createBuilder().collectEnrichmentChapters();
+      this._estimatedEnrichmentScenes = chapters.reduce((sum, ch) => sum + ch.scenes.length, 0);
     } catch {
       this._estimatedEnrichmentScenes = 0;
     }
@@ -964,29 +979,44 @@ export class LoreIndexWizard extends foundry.applications.api.HandlebarsApplicat
   }
 
   static async _onStartEnrichment(this: LoreIndexWizard): Promise<void> {
-    const loc = JournalParser.decodeLocation(this._parserFormValues);
-    if (!loc) {
-      (ui as any).notifications.warn('No adventure location selected.');
+    let chapters;
+    try {
+      chapters = await this._createBuilder().collectEnrichmentChapters();
+    } catch {
+      (ui as any).notifications.error('Failed to load lore index.');
       return;
     }
-    const chapterData = this._chapters.map((c) => c.data as JournalChapterData);
-    const scenes = this._createBuilder().collectEnrichmentScenes(chapterData, loc.id, loc.type);
-    this._enrichmentSelectedImageUrl = '';
-    this._enrichmentRunner.start(scenes);
+    if (chapters.length === 0) {
+      (ui as any).notifications.warn('No indexed chapters found. Run indexing first.');
+      return;
+    }
+    this._enrichmentImageSelections = {};
+    this._enrichmentRunner.start(chapters);
     this._goToStep('enriching');
   }
 
-  static async _onEnrichReplaceScene(this: LoreIndexWizard): Promise<void> {
-    await this._runSceneEnrichment('replace');
+  static async _onEnrichChapter(this: LoreIndexWizard): Promise<void> {
+    const selections = { ...this._enrichmentImageSelections };
+    const hasAny = Object.values(selections).some(Boolean);
+    if (!hasAny) {
+      (ui as any).notifications.warn('Select at least one image to enrich.');
+      return;
+    }
+    this._enrichmentRunner.beginChapterRun(selections);
+    this._enrichmentImageSelections = {};
+    this.render({ force: true });
+    await this._runChapterEnrichment();
   }
 
-  static async _onEnrichAddScene(this: LoreIndexWizard): Promise<void> {
-    await this._runSceneEnrichment('add');
+  static async _onSkipChapter(this: LoreIndexWizard): Promise<void> {
+    this._enrichmentImageSelections = {};
+    this._enrichmentRunner.skipChapter();
+    this.render({ force: true });
   }
 
-  static async _onEnrichSkipScene(this: LoreIndexWizard): Promise<void> {
-    this._enrichmentSelectedImageUrl = '';
-    this._enrichmentRunner.skipCurrent();
+  static async _onContinueEnrichment(this: LoreIndexWizard): Promise<void> {
+    this._enrichmentImageSelections = {};
+    this._enrichmentRunner.continueToNextChapter();
     this.render({ force: true });
   }
 
@@ -1005,6 +1035,10 @@ export class LoreIndexWizard extends foundry.applications.api.HandlebarsApplicat
 
   private _createBuilder(): LoreIndexBuilder {
     return new LoreIndexBuilder(game as any, AiService.create(game as any, this._selectedProvider));
+  }
+
+  private _createSceneEnricher(): SceneEnricher {
+    return new SceneEnricher(game as any, AiService.create(game as any, this._selectedProvider));
   }
 
   private _indexingCallOptions(): CallOptions {
@@ -1089,14 +1123,18 @@ export class LoreIndexWizard extends foundry.applications.api.HandlebarsApplicat
       this._abortController = null;
     }
 
-    this.render({ force: true });
-    // In index-all mode, auto-continue to next chapter or overview
+    // In index-all mode, auto-continue to next chapter or overview without pausing
     if (this._indexAll && this._runner.phase === 'between') {
       if (this._runner.hasNextChapter) {
         this._runner.continueToNext();
-        this.render({ force: true });
+        await this._runChapterIndexing();
+        return;
+      } else {
+        this._runner.startOverview();
       }
     }
+
+    this.render({ force: true });
   }
 
   private async _runIndexingOverview(): Promise<void> {
@@ -1139,40 +1177,36 @@ export class LoreIndexWizard extends foundry.applications.api.HandlebarsApplicat
     }
   }
 
-  private async _runSceneEnrichment(mode: 'replace' | 'add'): Promise<void> {
-    const scene = this._enrichmentRunner.currentScene;
-    if (!scene) return;
-
-    const imageUrl = this._enrichmentSelectedImageUrl;
-    if (!imageUrl) {
-      (ui as any).notifications.warn('Select an image before enriching.');
-      return;
-    }
-
+  private async _runChapterEnrichment(): Promise<void> {
     this._abortController = new AbortController();
-    this._enrichmentRunner.beginRun();
-    this.render({ force: true });
 
-    try {
-      await this._createBuilder().enrichSceneWithMap(
-        scene.sceneName,
-        imageUrl,
-        mode,
-        this._indexingCallOptions(),
-        (line) => this._addEnrichmentLogLine(line),
-      );
-      this._enrichmentSelectedImageUrl = '';
-      this._enrichmentRunner.sceneComplete();
-    } catch (err) {
-      if ((err as DOMException).name === 'AbortError') {
-        this._enrichmentRunner.sceneFailed('Cancelled.');
-      } else {
+    while (this._enrichmentRunner.phase === 'running') {
+      const item = this._enrichmentRunner.currentRunningScene;
+      if (!item) break;
+
+      this._addEnrichmentLogLine(`→ Enriching: ${item.scene.sceneName}…`);
+      this.render({ force: true });
+
+      try {
+        await this._createSceneEnricher().enrichSceneWithMap(
+          item.scene.sceneName,
+          item.scene.sourceText,
+          item.imageUrl,
+          'replace',
+          this._indexingCallOptions(),
+          (line) => this._addEnrichmentLogLine(line),
+        );
+        this._enrichmentRunner.sceneComplete();
+      } catch (err) {
+        if ((err as DOMException).name === 'AbortError') {
+          this._enrichmentRunner.stopEarly();
+          break;
+        }
         this._enrichmentRunner.sceneFailed((err as Error).message);
       }
-    } finally {
-      this._abortController = null;
     }
 
+    this._abortController = null;
     this.render({ force: true });
   }
 

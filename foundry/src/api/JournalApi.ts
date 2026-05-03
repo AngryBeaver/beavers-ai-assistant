@@ -1,6 +1,7 @@
 import { MODULE_FOLDER_NAME, NAMESPACE, SESSION_FOLDER_NAME } from '../definitions.js';
 import { ChatBubbleApi } from './ChatBubbleApi.js';
 import { JournalData, JournalPageData } from '../types.js';
+import { pageText } from '../modules/loreIndexUtils.js';
 
 export class JournalApi {
   /**
@@ -43,7 +44,7 @@ export class JournalApi {
         id: p.id,
         name: p.name,
         type: p.type,
-        text: p.text.content,
+        text: pageText(p),
         src: p.src,
       })),
     };
@@ -53,7 +54,14 @@ export class JournalApi {
    * Create or update a journal entry.
    */
   static async writeJournal(data: JournalData) {
-    const payload = { ...data };
+    const payload: any = {
+      ...data,
+      pages: data.pages?.map((p) => ({
+        name: p.name,
+        type: 'text',
+        text: { content: p.text, format: p.format === 'html' ? 1 : 2 },
+      })),
+    };
 
     if (payload.folder) {
       const normalised = payload.folder.trim().toLowerCase();
@@ -95,18 +103,20 @@ export class JournalApi {
       throw new Error(`Journal entry not found: ${journalIdentifier}`);
     }
 
-    // @ts-ignore
-    const page = pageData.id
-      ? journal.pages.get(pageData.id)
-      : pageData.name
-        ? journal.pages.getName(pageData.name)
-        : null;
+    const format = pageData.format === 'html' ? 1 : 2;
+    const textKey = format === 2 ? 'text.markdown' : 'text.content';
+    const textObj =
+      format === 2 ? { markdown: pageData.text, format } : { content: pageData.text, format };
 
+    // @ts-ignore
+    const page = journal.pages.getName(pageData.name);
     if (page) {
-      return page.update(pageData);
+      return page.update({ [textKey]: pageData.text, 'text.format': format });
     } else {
       // @ts-ignore
-      return journal.createEmbeddedDocuments('JournalEntryPage', [pageData]);
+      return journal.createEmbeddedDocuments('JournalEntryPage', [
+        { name: pageData.name, type: 'text', text: textObj },
+      ]);
     }
   }
 

@@ -45,6 +45,12 @@ function convertList(listInner: string, ordered: boolean): string {
   return items.length ? '\n' + items.join('\n') + '\n' : '';
 }
 
+export function pageText(page: any): string {
+  return page.text?.format === 2
+    ? (page.text?.markdown ?? '')
+    : stripHtml(page.text?.content ?? '');
+}
+
 export function stripHtml(html: string, h1Level = 3): string {
   const h = (n: number): string => '#'.repeat(Math.min(h1Level + n - 1, 6));
   return html

@@ -154,6 +154,10 @@ export class IndexingPassRunner {
     this._phase = 'complete';
   }
 
+  setIndexAll(value: boolean): void {
+    this._indexAll = value;
+  }
+
   addLogLine(line: string): void {
     this._log.push(line);
   }

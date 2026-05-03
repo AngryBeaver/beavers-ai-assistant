@@ -44,6 +44,38 @@ export class ChapterContentParser {
     return results;
   }
 
+  /**
+   * Extract only the sections whose top-level heading matches one of the given
+   * heading texts. Returns the full parse when headings is empty.
+   */
+  parseScene(chapter: ChapterCandidate, headings: string[]): string {
+    const fullMd = this.parse(chapter);
+    if (!headings.length) return fullMd;
+    const lines = fullMd.split('\n');
+    const included: string[] = [];
+    let inSection = false;
+    let sectionLevel = 0;
+    for (const line of lines) {
+      const hm = line.match(/^(#{1,6})\s+(.+)$/);
+      if (hm) {
+        const lvl = hm[1].length;
+        const txt = hm[2].trim();
+        if (headings.some((h) => h === txt)) {
+          inSection = true;
+          sectionLevel = lvl;
+          included.push(line);
+        } else if (inSection && lvl <= sectionLevel) {
+          inSection = false;
+        } else if (inSection) {
+          included.push(line);
+        }
+      } else if (inSection) {
+        included.push(line);
+      }
+    }
+    return included.join('\n').trim();
+  }
+
   parse(chapter: ChapterCandidate): string {
     switch (chapter.sourceType) {
       case 'folder':
@@ -135,7 +167,7 @@ export class ChapterContentParser {
         const rawName = p.name as string;
         // Use the scene-note text label (e.g. "H1", "A2") as an area prefix
         // when the page name doesn't already carry an area code.
-        const mark = (p.sceneNote?.text as string | undefined)?.trim() || p.system.code?.trim(); //dnd5e
+        const mark = this.getMark(p);
         const pageName = mark && !_hasAreaCode(rawName) ? `${mark}: ${rawName}` : rawName;
         const content = cleanFoundryMarkup(stripHtml(p.text?.content ?? '', h1Level)).trim();
         return content ? `${pageHash} ${pageName}\n${content}` : null;
@@ -149,5 +181,12 @@ export class ChapterContentParser {
       return `${jHash} ${journal.name as string}\n\n${pages.join('\n\n')}`;
     }
     return pages.join('\n\n');
+  }
+
+  private getMark(p: any) {
+    return (
+      (game.system.id === 'dnd5e' && p.system.code?.trim()) ||
+      (p.sceneNote?.text as string | undefined)?.trim()
+    );
   }
 }

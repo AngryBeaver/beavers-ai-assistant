@@ -116,7 +116,8 @@ export class LocalAiService implements AiService {
     }
 
     const data = (await response.json()) as any;
-    const text = data.choices?.[0]?.message?.content?.trim() ?? '';
+    const msg = data.choices?.[0]?.message;
+    const text = (msg?.content?.trim() || msg?.reasoning?.trim()) ?? '';
     if (!text) throw new Error('Unexpected LocalAI vision response format');
     return text;
   }

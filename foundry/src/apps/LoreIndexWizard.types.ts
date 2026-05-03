@@ -2,7 +2,7 @@ import type { AiProvider } from '../definitions.js';
 import type { ParsedChapter, ChapterRole, ParserFormField } from '../modules/AdventureParser.js';
 import type { JournalChapterData } from '../modules/JournalParser/index.js';
 import type { IndexingPhase } from '../modules/IndexingPassRunner.js';
-import type { EnrichmentPhase, NamedImage } from '../modules/EnrichmentPassRunner.js';
+import type { EnrichmentPhase, NamedImage } from '../modules/MapEnrichment/index.js';
 
 // ---------------------------------------------------------------------------
 // Location step
@@ -104,21 +104,34 @@ export interface IndexingCtx {
 // Enrichment step view model
 // ---------------------------------------------------------------------------
 
+export interface EnrichmentSceneView {
+  sceneName: string;
+  sceneIdx: number;
+  hasConnections: boolean;
+  images: NamedImage[];
+  /** Currently selected image URL for this scene (empty = scene will be skipped). */
+  selectedImageUrl: string;
+}
+
 export interface EnrichmentCtx {
   phase: EnrichmentPhase;
-  sceneName: string;
   chapterName: string;
-  images: NamedImage[];
-  hasConnections: boolean;
-  sceneIdx: number;
-  totalScenes: number;
+  chapterIdx: number;
+  totalChapters: number;
+  /** All scenes in the current chapter (populated during pre_chapter phase). */
+  scenes: EnrichmentSceneView[];
   log: string[];
   enrichedCount: number;
   error: string | null;
-  selectedImageUrl: string;
-  hasSelectedImage: boolean;
-  isPreScene: boolean;
+  /** Name of the scene currently being enriched (running phase). */
+  runningSceneName: string;
+  /** 1-based index of the running scene within the chapter run queue. */
+  runningIdx: number;
+  /** Total scenes queued for enrichment in the current chapter. */
+  runningTotal: number;
+  isPreChapter: boolean;
   isRunning: boolean;
+  isPostChapter: boolean;
   isComplete: boolean;
 }
 
