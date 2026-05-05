@@ -1,3 +1,5 @@
+import type { ChapterCandidate } from '../JournalParser/ChapterDetector.js';
+
 export type EnrichmentPhase = 'pre_chapter' | 'running' | 'post_chapter' | 'complete';
 
 /** A map/art image candidate with a human-readable name derived from its source context. */
@@ -11,9 +13,8 @@ export interface EnrichmentScene {
   sceneName: string;
   chapterName: string;
   images: NamedImage[];
-  hasConnections: boolean;
-  /** Raw source text extracted from the original adventure journal. */
-  sourceText: string;
+  hasLocationScene: boolean;
+  chapterCandidate: ChapterCandidate;
 }
 
 export interface EnrichmentChapter {

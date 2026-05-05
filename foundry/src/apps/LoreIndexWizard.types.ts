@@ -107,7 +107,7 @@ export interface IndexingCtx {
 export interface EnrichmentSceneView {
   sceneName: string;
   sceneIdx: number;
-  hasConnections: boolean;
+  hasLocationScene: boolean;
   images: NamedImage[];
   /** Currently selected image URL for this scene (empty = scene will be skipped). */
   selectedImageUrl: string;

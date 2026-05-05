@@ -54,21 +54,12 @@ export class ChapterContentParser {
     const lines = fullMd.split('\n');
     const included: string[] = [];
     let inSection = false;
-    let sectionLevel = 0;
     for (const line of lines) {
-      const hm = line.match(/^(#{1,6})\s+(.+)$/);
+      const hm = line.match(/^(#)\s+(.+)$/);
       if (hm) {
-        const lvl = hm[1].length;
         const txt = hm[2].trim();
-        if (headings.some((h) => h === txt)) {
-          inSection = true;
-          sectionLevel = lvl;
-          included.push(line);
-        } else if (inSection && lvl <= sectionLevel) {
-          inSection = false;
-        } else if (inSection) {
-          included.push(line);
-        }
+        inSection = headings.some((h) => h === txt);
+        if (inSection) included.push(line);
       } else if (inSection) {
         included.push(line);
       }

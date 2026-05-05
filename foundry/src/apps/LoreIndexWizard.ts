@@ -550,7 +550,7 @@ export class LoreIndexWizard extends foundry.applications.api.HandlebarsApplicat
     const scenes: EnrichmentSceneView[] = (chapter?.scenes ?? []).map((s, i) => ({
       sceneName: s.sceneName,
       sceneIdx: i,
-      hasConnections: s.hasConnections,
+      hasLocationScene: s.hasLocationScene,
       images: s.images,
       selectedImageUrl: this._enrichmentImageSelections[s.sceneName] ?? '',
     }));
@@ -961,8 +961,7 @@ export class LoreIndexWizard extends foundry.applications.api.HandlebarsApplicat
       await this._fetchModels();
     }
     try {
-      const chapters = await this._createBuilder().collectEnrichmentChapters();
-      this._estimatedEnrichmentScenes = chapters.reduce((sum, ch) => sum + ch.scenes.length, 0);
+      this._estimatedEnrichmentScenes = await this._createBuilder().countEnrichmentScenes();
     } catch {
       this._estimatedEnrichmentScenes = 0;
     }
@@ -1190,7 +1189,7 @@ export class LoreIndexWizard extends foundry.applications.api.HandlebarsApplicat
       try {
         await this._createSceneEnricher().enrichSceneWithMap(
           item.scene.sceneName,
-          item.scene.sourceText,
+          item.scene.chapterCandidate,
           item.imageUrl,
           'replace',
           this._indexingCallOptions(),

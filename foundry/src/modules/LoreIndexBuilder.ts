@@ -430,11 +430,23 @@ Rules:
   // Map enrichment
   // ---------------------------------------------------------------------------
 
+  async countEnrichmentScenes(): Promise<number> {
+    const index = await this.readIndex();
+    if (!index) return 0;
+    let count = 0;
+    for (const loreChapter of index.chapters) {
+      if (loreChapter.role === 'skip') continue;
+      const scenes = index.scenes[loreChapter.loreJournalId] ?? [];
+      count += scenes.filter((s) => s.role !== 'skip').length;
+    }
+    return count;
+  }
+
   /**
    * Build the chapter-by-chapter enrichment queue from the stored LoreIndex record.
    *
-   * For each chapter in the index (role !== 'skip'), collects candidate map images
-   * from the chapter's source content and pairs them with each indexed scene page.
+   * Source text is NOT parsed here — it is computed lazily by SceneEnricher only
+   * for selected scenes that lack an existing LocationScene page.
    */
   async collectEnrichmentChapters(): Promise<EnrichmentChapter[]> {
     const index = await this.readIndex();
@@ -455,7 +467,6 @@ Rules:
         tokens: 0,
       };
       const images = new MapImageCollector(this.#game as any).collectForChapter(chapterCandidate);
-      const parser = new ChapterContentParser(this.#game as any);
 
       const journal = (this.#game as any).journal?.find(
         (j: any) => j.id === loreChapter.loreJournalId,
@@ -464,21 +475,17 @@ Rules:
       const scenes: EnrichmentScene[] = loreScenes
         .filter((s) => s.role !== 'skip')
         .map((s) => {
-          let hasConnections = false;
-          if (journal) {
-            const page = (journal.pages.contents as any[]).find(
-              (p: any) => p.name === `Scene: ${s.name}`,
-            );
-            if (page) {
-              hasConnections = pageText(page).includes('#### Connections');
-            }
-          }
+          const hasLocationScene = journal
+            ? (journal.pages.contents as any[]).some(
+                (p: any) => p.name === `LocationScene: ${s.name}`,
+              )
+            : false;
           return {
             sceneName: s.name,
             chapterName: loreChapter.loreJournalName,
             images,
-            hasConnections,
-            sourceText: parser.parseScene(chapterCandidate, [s.name]),
+            hasLocationScene,
+            chapterCandidate,
           };
         });
 

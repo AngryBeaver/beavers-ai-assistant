@@ -2,11 +2,9 @@ import { MODULE_FOLDER_NAME, LORE_INDEX_JOURNAL_NAME } from '../../definitions.j
 import type { AiService, CallOptions } from '../../services/AiService.js';
 import { JournalApi } from '../../api/JournalApi.js';
 import { pageText } from '../loreIndexUtils.js';
+import { ChapterContentParser } from '../JournalParser/ChapterContentParser.js';
+import type { ChapterCandidate } from '../JournalParser/ChapterDetector.js';
 
-/**
- * Runs the vision AI call for a single scene and writes the resulting
- * `#### Connections` section back to the scene's lore-index journal page.
- */
 export class SceneEnricher {
   readonly #game: any;
   readonly #aiService: AiService;
@@ -17,16 +15,18 @@ export class SceneEnricher {
   }
 
   /**
-   * Analyse a map image for the given scene and write (or replace) the
-   * `#### Connections` block in the `Scene: <sceneName>` journal page.
+   * Enrich a scene's LocationScene page using a map image.
    *
-   * @param sourceText  Raw source text from the original adventure journal.
-   * @param mode        'replace' removes any existing Connections block first;
-   *                    'add' appends after any existing block.
+   * Calls `_stripToLocationText` to build a text-only location base, then
+   * passes it to the vision AI to extend with visual details from the map.
+   * Result is written to the `LocationScene: <sceneName>` journal page.
+   *
+   * @param mode  'replace' always regenerates even if a LocationScene exists;
+   *              'add' skips scenes that already have a LocationScene page.
    */
   async enrichSceneWithMap(
     sceneName: string,
-    sourceText: string,
+    chapterCandidate: ChapterCandidate,
     imageUrl: string,
     mode: 'replace' | 'add',
     callOptions: CallOptions,
@@ -39,99 +39,57 @@ export class SceneEnricher {
     const sceneJournalId = this._findJournalForScene(sceneName);
     if (!sceneJournalId) throw new Error(`Scene journal not found for: "Scene: ${sceneName}"`);
 
-    const existingLocationText = this._readScenePageText(
-      sceneJournalId,
-      `LocationScene: ${sceneName}`,
-    );
-    let locationText: string;
-    if (existingLocationText) {
-      locationText = existingLocationText;
-      onProgress(`  → Reusing existing location description.`);
-    } else {
-      onProgress(`  → Extracting location description…`);
-      locationText = await this._stripToLocationText(sourceText, callOptions);
-      await JournalApi.writeJournalPage(sceneJournalId, {
-        name: `LocationScene: ${sceneName}`,
-        text: locationText,
-      });
+    const existingLocationText = this._readLocationPageText(sceneJournalId, sceneName);
+    if (existingLocationText && mode === 'add') {
+      onProgress(`  → Location scene already exists, skipping.`);
+      return;
     }
 
-    const systemPrompt = `You are analysing a top-down tabletop RPG map image to extract how areas connect to each other.
+    onProgress(`  → Extracting location description…`);
+    const sourceText = new ChapterContentParser(this.#game).parseScene(chapterCandidate, [sceneName]);
+    const locationText = await this._stripToLocationText(sourceText, callOptions);
 
-The image shows a map with distinct areas — rooms, outdoor sections, caverns, or similar — each with a visible boundary. Most areas carry a label (a number, letter, or short code). Every labeled area on the map MUST appear in at least one connection entry — do not omit any.
+    const systemPrompt = `You are enriching a text-based location description for a tabletop RPG scene using a top-down map image.
 
-**Step 1 — read the legend.**
-If the map has a legend or key section, read it first. It defines what symbols mean: secret doors, trapped floors, one-way passages, etc. Apply those definitions throughout.
+The text was extracted from the adventure source. The map is a visual source. Together they produce the enriched description — the text provides understanding and game properties, the map provides visual facts.
 
-**Step 2 — for each labeled area, look at its boundary.**
-Examine every wall, edge, and border of the area. Identify what is directly adjacent — another labeled area, an unlabeled space (hallway, corridor, antechamber), or a physical feature (door, bridge, stream, shaft). Only write a connection if the two nodes share a direct physical boundary or feature. Do not skip intermediate spaces.
+**What the map can contribute:**
+- Area shapes, approximate sizes, and relative positions
+- Connection types visible as actual openings or symbols: door, double door, secret door, open gap, archway, stairs, ladder, chimney, bridge, stream, ford
+- Cardinal directions of connections
+- Unlabeled intermediate spaces physically present on the map (corridors, antechambers, cave entrances) — name them by what they are
 
-**Step 3 — name unnamed intermediate spaces.**
-If a hallway, corridor, passage, antechamber, cave entrance, or similar unlabeled space exists on the map, it is its own node with a bracketed slug describing what it physically is: \`[cave-entrance]\`, \`[antechamber]\`, \`[bridge]\`, \`[main-corridor]\`. Name it by what it is — NOT by which two areas it connects. Do NOT use pairwise names like \`[corridor-H1H2]\`.
-A single unnamed space can connect to many labeled areas. Write one entry per connection it has — e.g. a cave entrance that opens to H3, H4, H5 and H7 gets four entries. Do not split it into separate nodes just because it touches multiple areas.
+**Adjacency rule — read connections strictly from openings, never from proximity:**
+Two areas are connected ONLY if there is a visible opening or symbol between them (a door icon, an open gap in a wall, an archway, a passage). Shared walls, closeness, or visual grouping do NOT create a connection. If no opening exists between two areas, they are NOT connected — do not add one.
 
-**Step 4 — cross-reference each connection with the area description.**
-For every connection you identified visually, read the description of both areas it connects. The description often names what connects them: a secret door, a trapdoor, a specific gate, a stream ford. If the description mentions something that matches the visual, use that as the connection type and add the descriptive detail as a note. If the description does not mention a secret door but the map shows one, treat it as a regular door — descriptions are the authoritative source for special connection types.
+**What only the text can contribute — never invent these from the image:**
+- Skill checks or DC values of any kind
+- Whether something is locked, trapped, or requires a key
+- One-way restrictions or movement rules
+- Any game mechanic or encounter detail
 
-**Step 5 — identify the connection type precisely.**
-Look at what sits on the boundary: a door symbol, a double door, a secret door marking (from the legend), a gap in the wall, a stream or water feature, a bridge, a ladder, a chimney or shaft, a hole. Use that as the connection type. Never default to "passage" when a more specific type is visible. Invent a descriptive type if none of the standard ones fit.
+**How to write the output:**
+Use both the text and the map together. You may rephrase or restructure entries to integrate visual and textual information naturally — the goal is a clear, unified description, not a verbatim copy with additions bolted on. Do not contradict the text. Do not omit connections or areas present in either source.
 
-Standard types (use or extend): open, door, double-door, hidden-door, secret-door, ford, stream-crossing, rope-bridge, ladder, stairs, climb, tunnel, chimney, hole, archway.
+Output the COMPLETE enriched location description in the EXACT same format as the input — one section per labeled area with a "Physical layout:" paragraph and a "Connections:" section of prose entries. Do not add markdown headings like #### or ---. Output only the enriched description, nothing else.`;
 
-Output ONLY a markdown Connections block in this exact format:
-
-#### Connections
-
-- \`A -> [cave-entrance]\` : open  *(east, stream alongside)*
-- \`[cave-entrance] -> B\` : open  *(north)*
-- \`[cave-entrance] -> C\` : open  *(east)*
-- \`[cave-entrance] -> D\` : stairs  *(up)*
-- \`B -> E\` : door  *(west)*
-- \`C -> [bridge]\` : rope-bridge  *(north, requires climb to reach bridge level)*
-- \`[bridge] -> F\` : open  *(east)*
-- \`[bridge] -> G\` : open  *(west)*
-- \`F -> [exit: underdark]\` : hidden-door  *(south)*
-- \`C -> H\` : chimney  *(one-way up)*
-
-Additional rules:
-- Off-map exits use \`[exit: destination]\` — e.g. \`[exit: underdark]\`, \`[exit: surface]\`.
-- Add a cardinal direction hint *(north)*, *(east)*, etc. whenever determinable.
-- When multiple connections leave the same node in the same direction, add an ordinal qualifier: *(east, 1st from north)*, *(east, 2nd from north)*.
-- Add italics notes when meaningful: *(one-way down)*, *(locked)*, *(key in area 4)*, *(shallow stream)*, *(requires light source)*.
-- Symmetric (two-way) connections are written once. Mark one-way connections explicitly with *(one-way)* or *(one-way up/down)*.
-- Write nothing else — no prose, no headings other than #### Connections.`;
-
-    const userPrompt = `Here is the location description — use it to confirm and enrich the connections you identify from the map image above.\n\nLocation description:\n\n${locationText}`;
+    const userPrompt = `Here is the current location description. Enrich it using the map image.\n\n${locationText}`;
 
     onProgress(`  → Calling vision AI…`);
 
-    const result = await this.#aiService.callWithImage(systemPrompt, userPrompt, imageUrl, {
+    const enriched = await this.#aiService.callWithImage(systemPrompt, userPrompt, imageUrl, {
       ...callOptions,
       max_tokens: 8192,
     });
 
-    onProgress(`  → Writing connections…`);
-
-    const existingText = this._readScenePageText(sceneJournalId, sceneName);
-    let updatedText = existingText ?? '';
-    if (mode === 'replace') {
-      updatedText = updatedText.replace(
-        /\n?#### Connections\n[\s\S]*?(?=\n#### |\n---|\n##|$)/,
-        '',
-      );
-    }
-
-    const connections = result.trim().startsWith('#### Connections')
-      ? result.trim()
-      : `#### Connections\n\n${result.trim()}`;
-    updatedText = updatedText.trimEnd() + '\n\n' + connections;
+    onProgress(`  → Writing location scene…`);
 
     await JournalApi.writeJournalPage(sceneJournalId, {
-      name: `Scene: ${sceneName}`,
-      text: updatedText,
+      name: `LocationScene: ${sceneName}`,
+      text: enriched.trim(),
     });
 
-    onProgress(`  ✓ Connections written.`);
+    onProgress(`  ✓ Location scene written.`);
   }
 
   private async _stripToLocationText(
@@ -173,6 +131,15 @@ Preserve all area labels exactly as written (e.g. H1, H2, Area 3, Room 4).`;
     if (!journal) return null;
     const page = (journal.pages.contents as any[]).find(
       (p: any) => p.name === `Scene: ${sceneName}`,
+    );
+    return page ? pageText(page) : null;
+  }
+
+  private _readLocationPageText(journalId: string, sceneName: string): string | null {
+    const journal = this.#game.journal?.get(journalId);
+    if (!journal) return null;
+    const page = (journal.pages.contents as any[]).find(
+      (p: any) => p.name === `LocationScene: ${sceneName}`,
     );
     return page ? pageText(page) : null;
   }
