@@ -81,6 +81,20 @@ export class Settings {
       default: '',
     });
 
+    // AI GM Window — persisted selections (client-scoped)
+    game.settings.register(NAMESPACE, SETTINGS.AI_GM_CHAPTER, {
+      scope: 'client',
+      config: false,
+      type: String,
+      default: '',
+    });
+    game.settings.register(NAMESPACE, SETTINGS.AI_GM_SCENE, {
+      scope: 'client',
+      config: false,
+      type: String,
+      default: '',
+    });
+
     // Lore Index Wizard — persisted selections (client-scoped)
     game.settings.register(NAMESPACE, SETTINGS.WIZARD_LOCATION, {
       scope: 'client',

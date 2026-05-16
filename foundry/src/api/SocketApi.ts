@@ -60,21 +60,26 @@ export class SocketApi {
     try {
       switch (data.action) {
         case 'listJournals':
+          if (!game.user.isGM) return;
           result = await JournalApi.listJournals(data.args[0] as string | undefined);
           break;
         case 'readJournal':
+          if (!game.user.isGM) return;
           result = await JournalApi.readJournal(data.args[0] as string);
           break;
         case 'writeJournal':
+          if (!game.user.isGM) return;
           result = await JournalApi.writeJournal(data.args[0] as JournalData);
           break;
         case 'writeJournalPage':
+          if (!game.user.isGM) return;
           result = await JournalApi.writeJournalPage(
             data.args[0] as string,
             data.args[1] as JournalPageData,
           );
           break;
         case 'appendJournalPage':
+          if (!game.user.isGM) return;
           result = await JournalApi.appendJournalPage(
             data.args[0] as string,
             data.args[1] as string,
@@ -83,6 +88,7 @@ export class SocketApi {
           );
           break;
         case 'transcribeJournal':
+          if (!game.user.isGM) return;
           result = await JournalApi.transcribeJournal(
             data.args[0] as string,
             data.args[1] as string,

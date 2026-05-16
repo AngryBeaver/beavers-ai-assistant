@@ -613,12 +613,13 @@ export class LoreIndexWizard extends foundry.applications.api.HandlebarsApplicat
   private _estimateOutputTokens(): number {
     return this._chapters.filter((c) => c.role !== 'skip').length * 4096;
   }
-  // Image: ~12 tiles × 1,601 tokens (large map ~2000×1500 resized to 1568×1176)
-  // Scene text: full lore-index scene page, typically ~1,500 tokens
-  // Output: max_tokens cap on connections block
+  // Three-pass enrichment per scene:
+  //   Pass 1 (text)   — strip source text:  ~1,500 in / ~1,000 out
+  //   Pass 2 (vision) — observe openings:   ~20,000 image + ~100 prompt in / ~2,048 out
+  //   Pass 3 (text)   — synthesise:         ~3,100 in / ~8,192 out
   private static readonly _VISION_IMAGE_TOKENS = 20_000;
-  private static readonly _VISION_TEXT_TOKENS = 1_500;
-  private static readonly _VISION_OUTPUT_TOKENS = 1_024;
+  private static readonly _VISION_TEXT_TOKENS = 4_700;   // all non-image text input across 3 passes
+  private static readonly _VISION_OUTPUT_TOKENS = 11_240; // total max output across 3 passes
 
   private _claudeCostEstimate(inputTokens: number, outputTokens: number): string {
     return AiService.get('claude').estimateCost(inputTokens, outputTokens);

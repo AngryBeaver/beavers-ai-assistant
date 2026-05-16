@@ -38,19 +38,19 @@
     <legend>Estimate (map enrichment · {{estimatedEnrichmentScenes}} scenes)</legend>
     <table class="lw-table">
       <tr>
-        <td class="lw-label" style="font-style:italic;opacity:.7" colspan="2">Per scene</td>
+        <td class="lw-label" style="font-style:italic;opacity:.7" colspan="2">Per scene (3 AI calls)</td>
       </tr>
       <tr>
         <td class="lw-label">Image input (~12 tiles)</td>
         <td class="lw-value">{{visionImageTokensPerScene}} tokens</td>
       </tr>
       <tr>
-        <td class="lw-label">Scene text input</td>
+        <td class="lw-label">Text input (all passes)</td>
         <td class="lw-value">~{{visionTextTokensPerScene}} tokens</td>
       </tr>
       <tr>
-        <td class="lw-label">Output (max)</td>
-        <td class="lw-value">{{visionOutputTokensPerScene}} tokens</td>
+        <td class="lw-label">Output (max, all passes)</td>
+        <td class="lw-value">~{{visionOutputTokensPerScene}} tokens</td>
       </tr>
       <tr>
         <td class="lw-label">Cost per scene (Claude)</td>

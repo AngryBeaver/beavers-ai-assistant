@@ -27,6 +27,10 @@ export const SETTINGS = {
   SESSION_HISTORY_MESSAGES: 'sessionHistoryMessages',
   ADVENTURE_JOURNAL_FOLDER: 'adventureJournalFolder',
 
+  // AI GM Window — persisted selections (client-scoped)
+  AI_GM_CHAPTER: 'aiGmChapter',
+  AI_GM_SCENE: 'aiGmScene',
+
   // Lore Index Wizard — persisted selections (client-scoped)
   WIZARD_LOCATION: 'wizardLocation',
   WIZARD_CHAPTERS: 'wizardChapters',

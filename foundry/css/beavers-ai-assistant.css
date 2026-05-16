@@ -350,7 +350,7 @@
 }
 
 /* Response text streamed into the context box */
-.beavers-ai-response { white-space: pre-wrap; }
+.beavers-ai-response { white-space: pre-wrap; user-select: text; cursor: text; }
 
 /* NPC response header (name + optional spinner) */
 .beavers-ai-response-header {
@@ -360,4 +360,21 @@
   margin-bottom: 0.4rem;
   font-size: 0.9em;
   opacity: 0.75;
+}
+
+/* Context flag checkboxes row */
+.beavers-ai-ctx-flags {
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.5rem;
+  font-size: 0.8em;
+  opacity: 0.8;
+}
+.beavers-ai-ctx-flags label {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  cursor: pointer;
+  user-select: none;
 }

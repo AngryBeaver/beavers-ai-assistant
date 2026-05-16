@@ -49,38 +49,11 @@ export class SceneEnricher {
     const sourceText = new ChapterContentParser(this.#game).parseScene(chapterCandidate, [sceneName]);
     const locationText = await this._stripToLocationText(sourceText, callOptions);
 
-    const systemPrompt = `You are enriching a text-based location description for a tabletop RPG scene using a top-down map image.
+    onProgress(`  → Observing map openings…`);
+    const mapObservations = await this._observeMapOpenings(imageUrl, callOptions);
 
-The text was extracted from the adventure source. The map is a visual source. Together they produce the enriched description — the text provides understanding and game properties, the map provides visual facts.
-
-**What the map can contribute:**
-- Area shapes, approximate sizes, and relative positions
-- Connection types visible as actual openings or symbols: door, double door, secret door, open gap, archway, stairs, ladder, chimney, bridge, stream, ford
-- Cardinal directions of connections
-- Unlabeled intermediate spaces physically present on the map (corridors, antechambers, cave entrances) — name them by what they are
-
-**Adjacency rule — read connections strictly from openings, never from proximity:**
-Two areas are connected ONLY if there is a visible opening or symbol between them (a door icon, an open gap in a wall, an archway, a passage). Shared walls, closeness, or visual grouping do NOT create a connection. If no opening exists between two areas, they are NOT connected — do not add one.
-
-**What only the text can contribute — never invent these from the image:**
-- Skill checks or DC values of any kind
-- Whether something is locked, trapped, or requires a key
-- One-way restrictions or movement rules
-- Any game mechanic or encounter detail
-
-**How to write the output:**
-Use both the text and the map together. You may rephrase or restructure entries to integrate visual and textual information naturally — the goal is a clear, unified description, not a verbatim copy with additions bolted on. Do not contradict the text. Do not omit connections or areas present in either source.
-
-Output the COMPLETE enriched location description in the EXACT same format as the input — one section per labeled area with a "Physical layout:" paragraph and a "Connections:" section of prose entries. Do not add markdown headings like #### or ---. Output only the enriched description, nothing else.`;
-
-    const userPrompt = `Here is the current location description. Enrich it using the map image.\n\n${locationText}`;
-
-    onProgress(`  → Calling vision AI…`);
-
-    const enriched = await this.#aiService.callWithImage(systemPrompt, userPrompt, imageUrl, {
-      ...callOptions,
-      max_tokens: 8192,
-    });
+    onProgress(`  → Synthesising enriched description…`);
+    const enriched = await this._synthesiseLocationText(locationText, mapObservations, callOptions);
 
     onProgress(`  → Writing location scene…`);
 
@@ -92,22 +65,91 @@ Output the COMPLETE enriched location description in the EXACT same format as th
     onProgress(`  ✓ Location scene written.`);
   }
 
+  private async _observeMapOpenings(
+    imageUrl: string,
+    callOptions: CallOptions,
+  ): Promise<string> {
+    const systemPrompt = `You are a cartographic observer analysing a top-down tabletop RPG map image.
+
+**Step 1 — Read the legend**
+If the image contains a legend, key, or symbol reference, list every symbol it defines and what it means before doing anything else. If there is no legend, state that and fall back to standard dungeon cartography conventions (filled rectangle across a gap = door, double lines = double door, dotted line = secret door, open gap in wall = passage, etc.).
+
+**Step 2 — Locate and describe every area**
+List every labeled and unlabeled area visible on the map. For each report a single line:
+"<Area label or description> | <shape: rectangle/L-shape/irregular/corridor/etc.> | <approximate size or grid dimensions> | <notable physical features visible on the map: pillars, raised platform, water, rubble, etc.>"
+
+Include unlabeled spaces (corridors, alcoves, antechambers) if they are distinct enclosed areas.
+
+**Step 3 — Enumerate every opening**
+Using the areas identified in Step 2 and the legend from Step 1, list every visible opening, gap, door symbol, archway, or passage in the map. For each opening report a single line:
+"<Area label> | <side: north/south/east/west/floor/ceiling> | <type> | connects to: <target area label or description>"
+
+Rules for Step 3:
+- Report ONLY what you can directly see as a physical opening or a cartographic symbol for one.
+- Do NOT infer connections from shared walls, proximity, or visual grouping — a connection only exists where there is an actual gap or symbol.
+- Be exhaustive — list every opening, even small or partial ones.`;
+
+    const userPrompt = `Step 1: identify the legend. Step 2: locate and describe every area. Step 3: list every visible opening.`;
+    return this.#aiService.callWithImage!(systemPrompt, userPrompt, imageUrl, {
+      ...callOptions,
+      max_tokens: 2048,
+    });
+  }
+
+  private async _synthesiseLocationText(
+    locationText: string,
+    mapObservations: string,
+    callOptions: CallOptions,
+  ): Promise<string> {
+    const systemPrompt = `You are extending a text-based location description for a tabletop RPG scene using observed map data.
+
+Source A is the location description extracted from the adventure text. It is the base — preserve all of its content. Do not remove, replace, or contradict anything in Source A.
+Source B is a list of openings observed directly from the map image.
+
+**What to do with Source B:**
+- If Source B lists an opening that is not mentioned in Source A at all, add it to the relevant area's Connections section.
+- If Source A mentions a connection but lacks a cardinal direction, and Source B provides one, add the direction.
+- If Source B identifies an unlabeled intermediate space (corridor, alcove) not in Source A, add it as its own section with what it connects to.
+- If Source B confirms or clarifies the shape or size of an area that Source A describes vaguely, extend the layout paragraph.
+
+**What not to do:**
+- Do not remove any connections or content already in Source A.
+- Do not add game mechanics, DC values, lock/trap status, or encounter details — those belong to Source A only.
+- Do not add connections from Source B that duplicate ones already in Source A.
+
+Output the COMPLETE enriched location description preserving the EXACT markdown structure of Source A — ## headings for areas, #### subheadings for description / layout / connections, bullet points for connections. Do not change, flatten, or remove any heading markers. Output only the enriched description, nothing else.`;
+
+    const userPrompt = `## Source A — Text location description\n\n${locationText}\n\n---\n\n## Source B — Map openings observed\n\n${mapObservations}`;
+    const response = await this.#aiService.call(systemPrompt, userPrompt, {
+      ...callOptions,
+      max_tokens: 8192,
+    });
+    return response.content || response.reasoning || locationText;
+  }
+
   private async _stripToLocationText(
     sourceText: string,
     callOptions: CallOptions,
   ): Promise<string> {
     const systemPrompt = `You extract physical location and spatial connection information from tabletop RPG scene text.
 
-Output a clean markdown document with one section per labeled area (use its exact label as the heading). For each area include only:
-- Physical layout relevant to movement (size, shape, notable features a player would navigate around)
-- Every connection to other areas: doors, passages, openings, bridges, streams, ladders, stairs, chimneys, holes — include what type and what it leads to
-- Special connection properties: locked, secret, one-way, requires a key
+Output ONLY a markdown document using EXACTLY this structure for every area — no other format is acceptable:
 
-Exclude entirely: enemies, NPCs, loot, treasure, story context, dialogue, traps that do not block movement, read-aloud text, game mechanics.
+## <area code> <area name>
+#### description
+<a few sentences: what this area is and what it contains>
+#### layout
+<prose: size, shape, elevation changes, features a player would navigate around>
+#### connections
+- <target area code> <connection type>: <direction if known>. <properties: locked / secret / one-way / requires key / sloped / must be climbed if applicable>
 
-Preserve all area labels exactly as written (e.g. H1, H2, Area 3, Room 4).`;
+Rules:
+- Every area gets its own ## section. Use the exact area code and name as written in the source (e.g. G1 Cave Mouth, Area 3 Throne Room).
+- Every connection gets its own bullet under ### connections.
+- Exclude entirely: enemies, NPCs, loot, treasure, story context, dialogue, traps that do not block movement, game mechanics.
+- Output nothing outside the markdown document — no introduction, no summary.`;
 
-    const userPrompt = `Extract location and connection information from this scene:\n\n${sourceText}`;
+    const userPrompt = `Extract layout, location and connection information from this scene:\n\n${sourceText}`;
     const response = await this.#aiService.call(systemPrompt, userPrompt, callOptions);
     return response.content || response.reasoning || sourceText;
   }
@@ -124,15 +166,6 @@ Preserve all area labels exactly as written (e.g. H1, H2, Area 3, Room 4).`;
       if (page) return journal.id as string;
     }
     return null;
-  }
-
-  private _readScenePageText(journalId: string, sceneName: string): string | null {
-    const journal = this.#game.journal?.get(journalId);
-    if (!journal) return null;
-    const page = (journal.pages.contents as any[]).find(
-      (p: any) => p.name === `Scene: ${sceneName}`,
-    );
-    return page ? pageText(page) : null;
   }
 
   private _readLocationPageText(journalId: string, sceneName: string): string | null {
