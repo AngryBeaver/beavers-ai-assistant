@@ -46,7 +46,9 @@ export class SceneEnricher {
     }
 
     onProgress(`  → Extracting location description…`);
-    const sourceText = new ChapterContentParser(this.#game).parseScene(chapterCandidate, [sceneName]);
+    const sourceText = new ChapterContentParser(this.#game).parseScene(chapterCandidate, [
+      sceneName,
+    ]);
     const locationText = await this._stripToLocationText(sourceText, callOptions);
 
     onProgress(`  → Observing map openings…`);
@@ -65,10 +67,7 @@ export class SceneEnricher {
     onProgress(`  ✓ Location scene written.`);
   }
 
-  private async _observeMapOpenings(
-    imageUrl: string,
-    callOptions: CallOptions,
-  ): Promise<string> {
+  private async _observeMapOpenings(imageUrl: string, callOptions: CallOptions): Promise<string> {
     const systemPrompt = `You are a cartographic observer analysing a top-down tabletop RPG map image.
 
 **Step 1 — Read the legend**

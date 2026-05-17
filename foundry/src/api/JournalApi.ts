@@ -164,7 +164,7 @@ export class JournalApi {
     return nameOrId;
   }
 
-  private static async ensureFolder(name: string, parentId: string | null): Promise<any> {
+  static async ensureFolder(name: string, parentId: string | null): Promise<any> {
     const existing = game.folders.find(
       (f: any) =>
         f.type === 'JournalEntry' &&

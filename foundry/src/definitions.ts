@@ -8,6 +8,9 @@ export const MODULE_FOLDER_NAME = 'beavers-ai-assistant';
 /** Fixed folder inside MODULE_FOLDER_NAME where session journals are stored. */
 export const SESSION_FOLDER_NAME = 'session';
 
+/** Fixed folder inside MODULE_FOLDER_NAME where actor journals are stored. */
+export const ACTORS_FOLDER_NAME = 'actors';
+
 /** Fixed journal name for session summaries inside SESSION_FOLDER_NAME. */
 export const SUMMARY_JOURNAL_NAME = 'AI-Summary';
 

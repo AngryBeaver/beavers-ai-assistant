@@ -4,33 +4,15 @@ import {
   LORE_INDEX_JOURNAL_NAME,
   SESSION_FOLDER_NAME,
   SUMMARY_JOURNAL_NAME,
+  ACTORS_FOLDER_NAME,
 } from '../definitions.js';
 import { Settings } from './settings/Settings.js';
 import { SETTINGS } from '../definitions.js';
-import { AiService } from '../services/AiService.js';
 import { LoreIndexWizard } from './LoreIndexWizard.js';
-
-type SendPhase = 'idle' | 'asking' | 'asked';
-
-interface ContextFlags {
-  scene: boolean;
-  locationScene: boolean;
-  overview: boolean;
-  actor: boolean;
-  session: boolean;
-}
-
-interface AiGmWindowContext {
-  loreIndexExists: boolean;
-  availableChapters: string[];
-  selectedChapter: string;
-  availableScenes: string[];
-  selectedScene: string;
-  phase: SendPhase;
-  response: string;
-  questionText: string;
-  contextFlags: ContextFlags;
-}
+import { pageText } from '../modules/loreIndexUtils.js';
+import type { AiGmExtension, ContextFlags, SharedContext } from './AiGmExtension.js';
+import { ChatExtension } from './extensions/ChatExtension.js';
+import { ActorExtension } from './extensions/ActorExtension.js';
 
 export class AiGmWindow extends foundry.applications.api.HandlebarsApplicationMixin(
   foundry.applications.api.ApplicationV2,
@@ -40,10 +22,8 @@ export class AiGmWindow extends foundry.applications.api.HandlebarsApplicationMi
     window: { title: 'AI Assistant', resizable: true },
     position: { width: 440 },
     actions: {
-      stop: AiGmWindow._onStop,
       openSettings: AiGmWindow._onOpenSettings,
       openAdventureSetup: AiGmWindow._onOpenAdventureSetup,
-      send: AiGmWindow._onSend,
     },
   };
 
@@ -56,15 +36,11 @@ export class AiGmWindow extends foundry.applications.api.HandlebarsApplicationMi
   private static _instance: AiGmWindow | null = null;
 
   // ---------------------------------------------------------------------------
-  // Instance state
+  // Shared header state
   // ---------------------------------------------------------------------------
 
   private _selectedChapter = '';
   private _selectedScene = '';
-  private _questionText = '';
-  private _phase: SendPhase = 'idle';
-  private _response = '';
-  private _abortController: AbortController | null = null;
   private _contextFlags: ContextFlags = {
     scene: true,
     locationScene: false,
@@ -72,6 +48,13 @@ export class AiGmWindow extends foundry.applications.api.HandlebarsApplicationMi
     actor: false,
     session: false,
   };
+
+  // ---------------------------------------------------------------------------
+  // Tab management
+  // ---------------------------------------------------------------------------
+
+  private _activeTabId = 'chat';
+  private readonly _extensions: AiGmExtension[] = [new ChatExtension(), new ActorExtension()];
 
   // ---------------------------------------------------------------------------
   // Lifecycle
@@ -84,7 +67,6 @@ export class AiGmWindow extends foundry.applications.api.HandlebarsApplicationMi
       );
       return;
     }
-
     if (!AiGmWindow._instance) {
       AiGmWindow._instance = new AiGmWindow();
       AiGmWindow._instance._loadSelections();
@@ -92,9 +74,10 @@ export class AiGmWindow extends foundry.applications.api.HandlebarsApplicationMi
     AiGmWindow._instance.render({ force: true });
   }
 
-  async _prepareContext(_options: object): Promise<AiGmWindowContext> {
+  async _prepareContext(_options: object): Promise<object> {
     const availableChapters = this._loadChapters();
-    if (!this._selectedChapter && availableChapters.length > 0) {
+    const loreIndexExists = availableChapters.length > 0;
+    if (!this._selectedChapter && loreIndexExists) {
       this._selectedChapter = availableChapters[0];
     }
     const availableScenes = this._selectedChapter
@@ -104,45 +87,86 @@ export class AiGmWindow extends foundry.applications.api.HandlebarsApplicationMi
       this._selectedScene = '';
     }
 
+    const shared = this._buildSharedContext(loreIndexExists);
+    const tabs = this._extensions.map((ext) => ({
+      id: ext.id,
+      label: ext.tabLabel,
+      isActive: ext.id === this._activeTabId,
+      context: ext.prepareContext(shared),
+    }));
+
     return {
-      loreIndexExists: availableChapters.length > 0,
+      loreIndexExists,
       availableChapters,
       selectedChapter: this._selectedChapter,
       availableScenes,
       selectedScene: this._selectedScene,
-      phase: this._phase,
-      response: this._response,
-      questionText: this._questionText,
       contextFlags: { ...this._contextFlags },
+      tabs,
     };
   }
 
   protected _onRender(_context: object, _options: object): void {
-    const chapterSelect = this.element?.querySelector<HTMLSelectElement>('#ai-chapter-select');
-    chapterSelect?.addEventListener('change', (e) => {
-      this._selectedChapter = (e.target as HTMLSelectElement).value;
-      this._selectedScene = '';
-      this._saveSelections();
-      void this.render({ force: true });
-    });
+    // Chapter select
+    this.element
+      ?.querySelector<HTMLSelectElement>('#ai-chapter-select')
+      ?.addEventListener('change', (e) => {
+        this._selectedChapter = (e.target as HTMLSelectElement).value;
+        this._selectedScene = '';
+        this._saveSelections();
+        void this.render({ force: true });
+      });
 
-    const sceneSelect = this.element?.querySelector<HTMLSelectElement>('#ai-scene-select');
-    sceneSelect?.addEventListener('change', (e) => {
-      this._selectedScene = (e.target as HTMLSelectElement).value;
-      this._saveSelections();
-      void this.render();
-    });
+    // Scene select
+    this.element
+      ?.querySelector<HTMLSelectElement>('#ai-scene-select')
+      ?.addEventListener('change', (e) => {
+        this._selectedScene = (e.target as HTMLSelectElement).value;
+        this._saveSelections();
+        void this.render({ force: true });
+      });
 
-    const questionArea = this.element?.querySelector<HTMLTextAreaElement>('#ai-question-input');
-    questionArea?.addEventListener('input', (e) => {
-      this._questionText = (e.target as HTMLTextAreaElement).value;
-    });
-
+    // Context flags
     const flagKeys = ['scene', 'locationScene', 'overview', 'actor', 'session'] as const;
     for (const flag of flagKeys) {
-      const cb = this.element?.querySelector<HTMLInputElement>(`input[name="ctx-${flag}"]`);
-      cb?.addEventListener('change', (e) => {
-        this._contextFlags[flag] = (e.target as HTMLInputElement).checked;
+      this.element
+        ?.querySelector<HTMLInputElement>(`input[name="ctx-${flag}"]`)
+        ?.addEventListener('change', (e) => {
+          this._contextFlags[flag] = (e.target as HTMLInputElement).checked;
+        });
+    }
+
+    // Tab navigation
+    this.element?.querySelectorAll<HTMLElement>('[data-tab-id]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        this._activeTabId = btn.dataset.tabId!;
+        void this.render({ force: true });
+      });
+    });
+
+    // Per-extension panel wiring
+    for (const ext of this._extensions) {
+      const panel = this.element?.querySelector<HTMLElement>(`[data-tab-panel="${ext.id}"]`);
+      if (!panel) continue;
+
+      const getShared = (): SharedContext =>
+        this._buildSharedContext(this._loadChapters().length > 0);
+      const requestRender = async (): Promise<void> => {
+        await this.render({ force: true });
+      };
+
+      ext.onRender(panel, requestRender);
+
+      panel.querySelectorAll<HTMLButtonElement>('[data-ext-btn]').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          void ext.onButton(btn.dataset.extBtn!, getShared(), requestRender);
+        });
+      });
+
+      panel.querySelectorAll<HTMLButtonElement>('[data-use-section]').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          void ext.onUse(btn.dataset.useSection!, getShared(), requestRender);
+        });
       });
     }
   }
@@ -156,122 +180,64 @@ export class AiGmWindow extends foundry.applications.api.HandlebarsApplicationMi
   // Actions
   // ---------------------------------------------------------------------------
 
-  /** Abort the current AI call. */
-  static _onStop(this: AiGmWindow): void {
-    this._abortController?.abort();
-  }
-
   static async _onOpenSettings(_this: AiGmWindow): Promise<void> {
     const menuKey = `${NAMESPACE}.aiAssistant`;
     const menu = (game.settings.menus as any).get(menuKey);
-    if (menu?.settingsApp) {
-      menu.settingsApp.render(true);
-    }
+    if (menu?.settingsApp) menu.settingsApp.render(true);
   }
 
   static _onOpenAdventureSetup(): void {
     LoreIndexWizard.open();
   }
 
-  /** Send a typed question using the selected chapter + scene as lore context. */
-  static async _onSend(this: AiGmWindow): Promise<void> {
-    if (!this._selectedScene || !this._questionText.trim()) return;
-
-    const context = this._buildSceneContext();
-    if (!context) {
-      ui.notifications.warn('Could not load scene context.');
-      return;
-    }
-
-    this._phase = 'asking';
-    this._response = '';
-    this._abortController = new AbortController();
-    await this.render();
-
-    const systemPrompt = `You are a TTRPG GM assistant. Answer the GM's question concisely and accurately using only the provided adventure lore context.`;
-    const userPrompt = `${context}\n\n---\n\n${this._questionText.trim()}`;
-
-    try {
-      await AiService.create(game as unknown as any).stream(
-        systemPrompt,
-        userPrompt,
-        (chunk, type) => {
-          if (type !== 'content') return;
-          this._response += chunk;
-          const el = this.element?.querySelector('.beavers-ai-response');
-          if (el) el.textContent = this._response;
-        },
-        { max_tokens: 1024, signal: this._abortController.signal },
-      );
-      this._phase = 'asked';
-    } catch (err) {
-      if ((err as DOMException).name !== 'AbortError') {
-        ui.notifications.error(`Question failed: ${(err as Error).message}`);
-      }
-      this._phase = 'idle';
-    } finally {
-      this._abortController = null;
-    }
-
-    await this.render();
-  }
-
   // ---------------------------------------------------------------------------
   // Private helpers
   // ---------------------------------------------------------------------------
 
-  private _loadSelections(): void {
-    this._selectedChapter = (game.settings.get(NAMESPACE, SETTINGS.AI_GM_CHAPTER) as string) || '';
-    this._selectedScene = (game.settings.get(NAMESPACE, SETTINGS.AI_GM_SCENE) as string) || '';
-  }
-
-  private _saveSelections(): void {
-    void game.settings.set(NAMESPACE, SETTINGS.AI_GM_CHAPTER, this._selectedChapter);
-    void game.settings.set(NAMESPACE, SETTINGS.AI_GM_SCENE, this._selectedScene);
-  }
-
-  private _buildSceneContext(): string | null {
+  private _buildSharedContext(loreIndexExists: boolean): SharedContext {
     const loreFolder = this._getLoreIndexFolder();
-    if (!loreFolder || !this._selectedChapter || !this._selectedScene) return null;
+    const chapterJournal =
+      loreFolder && this._selectedChapter
+        ? ((game.journal as any)?.find(
+            (j: any) => j.folder?.id === loreFolder.id && j.name === this._selectedChapter,
+          ) ?? null)
+        : null;
+    return {
+      loreIndexExists,
+      selectedChapter: this._selectedChapter,
+      selectedScene: this._selectedScene,
+      chapterJournalId: (chapterJournal?.id as string | undefined) ?? null,
+      contextFlags: { ...this._contextFlags },
+      sceneContext: this._buildSceneContext(loreFolder, chapterJournal),
+    };
+  }
 
-    const chapterJournal = (game.journal as any)?.find(
-      (j: any) => j.folder?.id === loreFolder.id && j.name === this._selectedChapter,
-    );
-    if (!chapterJournal) return null;
-
-    const pages: any[] = chapterJournal.pages.contents as any[];
+  private _buildSceneContext(loreFolder: any | null, chapterJournal: any | null): string | null {
     const parts: string[] = [];
 
-    if (this._contextFlags.overview) {
-      const summaryPage = pages.find((p: any) => p.name === 'Summary');
-      if (summaryPage) {
-        const text = this._pageText(summaryPage);
+    if (loreFolder && chapterJournal && this._selectedScene) {
+      const pages: any[] = chapterJournal.pages.contents as any[];
+
+      if (this._contextFlags.overview) {
+        const p = pages.find((pg: any) => pg.name === 'Summary');
+        const text = p ? pageText(p) : '';
         if (text) parts.push(`## Chapter: ${this._selectedChapter}\n${text}`);
       }
-    }
-
-    if (this._contextFlags.scene) {
-      const scenePage = pages.find((p: any) => p.name === `Scene: ${this._selectedScene}`);
-      if (scenePage) {
-        const text = this._pageText(scenePage);
+      if (this._contextFlags.scene) {
+        const p = pages.find((pg: any) => pg.name === `Scene: ${this._selectedScene}`);
+        const text = p ? pageText(p) : '';
         if (text) parts.push(`## Scene: ${this._selectedScene}\n${text}`);
       }
-    }
-
-    if (this._contextFlags.locationScene) {
-      const locPage = pages.find((p: any) => p.name === `LocationScene: ${this._selectedScene}`);
-      if (locPage) {
-        const text = this._pageText(locPage);
+      if (this._contextFlags.locationScene) {
+        const p = pages.find((pg: any) => pg.name === `LocationScene: ${this._selectedScene}`);
+        const text = p ? pageText(p) : '';
         if (text) parts.push(`## Location: ${this._selectedScene}\n${text}`);
       }
     }
 
     if (this._contextFlags.actor) {
-      const actorPage = pages.find((p: any) => p.name === `Actor: ${this._selectedScene}`);
-      if (actorPage) {
-        const text = this._pageText(actorPage);
-        if (text) parts.push(`## Actors: ${this._selectedScene}\n${text}`);
-      }
+      const actorsText = this._loadActorsContext();
+      if (actorsText) parts.push(`## Actors\n${actorsText}`);
     }
 
     if (this._contextFlags.session) {
@@ -281,12 +247,35 @@ export class AiGmWindow extends foundry.applications.api.HandlebarsApplicationMi
           (p: any) => p.name === 'Transcript',
         );
         if (transcriptPage) {
-          const text = this._pageText(transcriptPage);
+          const text = pageText(transcriptPage);
           if (text) parts.push(`## Session Log (${sessionJournal.name as string})\n${text}`);
         }
       }
     }
 
+    return parts.length > 0 ? parts.join('\n\n---\n\n') : null;
+  }
+
+  private _loadActorsContext(): string | null {
+    const modFolder = (game.folders as any)?.find(
+      (f: any) => f.name === MODULE_FOLDER_NAME && f.type === 'JournalEntry' && !f.folder,
+    );
+    if (!modFolder) return null;
+    const actorsFolder = (game.folders as any)?.find(
+      (f: any) =>
+        f.name === ACTORS_FOLDER_NAME && f.type === 'JournalEntry' && f.folder?.id === modFolder.id,
+    );
+    if (!actorsFolder) return null;
+
+    const journals: any[] =
+      (game.journal as any)?.filter((j: any) => j.folder?.id === actorsFolder.id) ?? [];
+    const parts: string[] = [];
+    for (const journal of journals) {
+      for (const page of journal.pages.contents as any[]) {
+        const text = pageText(page);
+        if (text) parts.push(text);
+      }
+    }
     return parts.length > 0 ? parts.join('\n\n---\n\n') : null;
   }
 
@@ -302,17 +291,12 @@ export class AiGmWindow extends foundry.applications.api.HandlebarsApplicationMi
         f.folder?.id === modFolder.id,
     );
     if (!sessionFolder) return null;
-    const journals: any[] = (game.journal as any)?.filter(
-      (j: any) => j.folder?.id === sessionFolder.id && j.name !== SUMMARY_JOURNAL_NAME,
-    ) ?? [];
+    const journals: any[] =
+      (game.journal as any)?.filter(
+        (j: any) => j.folder?.id === sessionFolder.id && j.name !== SUMMARY_JOURNAL_NAME,
+      ) ?? [];
     journals.sort((a, b) => (a.name as string).localeCompare(b.name as string));
     return journals.at(-1) ?? null;
-  }
-
-  /** Raw text from a journal page (markdown-format preferred, HTML stripped otherwise). */
-  private _pageText(page: any): string {
-    if (page.text?.format === 2 && page.text.markdown) return page.text.markdown as string;
-    return ((page.text?.content as string) ?? '').replace(/<[^>]*>/g, '').trim();
   }
 
   private _getLoreIndexFolder(): any | null {
@@ -330,6 +314,16 @@ export class AiGmWindow extends foundry.applications.api.HandlebarsApplicationMi
     );
   }
 
+  private _loadSelections(): void {
+    this._selectedChapter = (game.settings.get(NAMESPACE, SETTINGS.AI_GM_CHAPTER) as string) || '';
+    this._selectedScene = (game.settings.get(NAMESPACE, SETTINGS.AI_GM_SCENE) as string) || '';
+  }
+
+  private _saveSelections(): void {
+    void game.settings.set(NAMESPACE, SETTINGS.AI_GM_CHAPTER, this._selectedChapter);
+    void game.settings.set(NAMESPACE, SETTINGS.AI_GM_SCENE, this._selectedScene);
+  }
+
   private _loadChapters(): string[] {
     const loreFolder = this._getLoreIndexFolder();
     if (!loreFolder) return [];
@@ -345,7 +339,6 @@ export class AiGmWindow extends foundry.applications.api.HandlebarsApplicationMi
   private _loadScenesForChapter(chapterName: string): string[] {
     const loreFolder = this._getLoreIndexFolder();
     if (!loreFolder) return [];
-
     const chapterJournal = (game.journal as any)?.find(
       (j: any) => j.folder?.id === loreFolder.id && j.name === chapterName,
     );
@@ -360,14 +353,12 @@ export class AiGmWindow extends foundry.applications.api.HandlebarsApplicationMi
       );
       if (indexPage) {
         try {
-          const raw = ((indexPage.text?.content as string) ?? '').replace(/<[^>]*>/g, '').trim();
+          const raw = pageText(indexPage).trim();
           const loreIndex = JSON.parse(raw) as {
             scenes?: Record<string, Array<{ name: string; role: string }>>;
           };
           const sceneList = loreIndex.scenes?.[chapterJournal.id as string];
-          if (sceneList) {
-            return sceneList.filter((s) => s.role === 'include').map((s) => s.name);
-          }
+          if (sceneList) return sceneList.filter((s) => s.role === 'include').map((s) => s.name);
         } catch {
           /* fall through to journal page scan */
         }

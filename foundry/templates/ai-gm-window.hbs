@@ -1,34 +1,21 @@
 <div class="beavers-ai-gm-window">
 
-  {{!-- Header: flush to the top of window-content, gradient + border-bottom --}}
+  {{!-- Shared header: chapter/scene selects + context flags --}}
   {{#if loreIndexExists}}
   <div class="beavers-ai-header">
-    <select id="ai-chapter-select">
-      {{#each availableChapters}}
-        <option value="{{this}}" {{#if (eq this ../selectedChapter)}}selected{{/if}}>{{this}}</option>
-      {{/each}}
-    </select>
-    <select id="ai-scene-select">
-      <option value="">— any scene —</option>
-      {{#each availableScenes}}
-        <option value="{{this}}" {{#if (eq this ../selectedScene)}}selected{{/if}}>{{this}}</option>
-      {{/each}}
-    </select>
-  </div>
-  {{else}}
-  <div class="beavers-ai-header beavers-ai-header--empty">
-    <i class="fas fa-circle-info"></i>
-    <span>Adventure not configured yet.</span>
-    <button type="button" data-action="openAdventureSetup">
-      <i class="fas fa-wand-magic-sparkles"></i> Adventure Setup
-    </button>
-  </div>
-  {{/if}}
-
-  {{!-- Body: owns the 16px padding --}}
-  <div class="beavers-ai-body">
-
-    {{!-- Context inclusion checkboxes --}}
+    <div class="beavers-ai-header-selects">
+      <select id="ai-chapter-select">
+        {{#each availableChapters}}
+          <option value="{{this}}" {{#if (eq this ../selectedChapter)}}selected{{/if}}>{{this}}</option>
+        {{/each}}
+      </select>
+      <select id="ai-scene-select">
+        <option value="">— any scene —</option>
+        {{#each availableScenes}}
+          <option value="{{this}}" {{#if (eq this ../selectedScene)}}selected{{/if}}>{{this}}</option>
+        {{/each}}
+      </select>
+    </div>
     <div class="beavers-ai-ctx-flags">
       <label><input type="checkbox" name="ctx-scene" {{#if contextFlags.scene}}checked{{/if}}> Scene</label>
       <label><input type="checkbox" name="ctx-locationScene" {{#if contextFlags.locationScene}}checked{{/if}}> Location</label>
@@ -36,39 +23,69 @@
       <label><input type="checkbox" name="ctx-actor" {{#if contextFlags.actor}}checked{{/if}}> Actor</label>
       <label><input type="checkbox" name="ctx-session" {{#if contextFlags.session}}checked{{/if}}> Session</label>
     </div>
-
-    {{!-- Bordered context box, ~400px, shows phase content --}}
-    <div class="beavers-ai-context">
-
-      {{#if (eq phase "asking")}}
-      <div class="beavers-ai-status">
-        <i class="fas fa-spinner fa-spin"></i>
-      </div>
-      <div class="beavers-ai-response"></div>
-      {{/if}}
-
-      {{#if (eq phase "asked")}}
-      <div class="beavers-ai-response">{{response}}</div>
-      {{/if}}
-
-    </div>{{!-- .beavers-ai-context --}}
-
-    {{!-- Question textarea --}}
-    <textarea id="ai-question-input" class="beavers-ai-question"
-      placeholder="Ask a question about the selected scene…">{{questionText}}</textarea>
-
-    {{!-- Button row --}}
-    <div class="beavers-ai-controls">
-      <button type="button" data-action="send" {{#unless selectedScene}}disabled{{/unless}}>
-        <i class="fas fa-paper-plane"></i> Send
+  </div>
+  {{else}}
+  <div class="beavers-ai-header beavers-ai-header--empty">
+    <div class="beavers-ai-header-empty-row">
+      <i class="fas fa-circle-info"></i>
+      <span>Adventure not configured yet.</span>
+      <button type="button" data-action="openAdventureSetup">
+        <i class="fas fa-wand-magic-sparkles"></i> Adventure Setup
       </button>
-      {{#if (eq phase "asking")}}
-      <button type="button" data-action="stop">
-        <i class="fas fa-stop"></i> Stop
-      </button>
-      {{/if}}
     </div>
+    <div class="beavers-ai-ctx-flags">
+      <label><input type="checkbox" name="ctx-session" {{#if contextFlags.session}}checked{{/if}}> Session</label>
+    </div>
+  </div>
+  {{/if}}
 
-  </div>{{!-- .beavers-ai-body --}}
+  {{!-- Tab navigation --}}
+  <div class="beavers-ai-tabs">
+    {{#each tabs}}
+    <button type="button" class="beavers-ai-tab-btn {{#if isActive}}is-active{{/if}}" data-tab-id="{{id}}">{{label}}</button>
+    {{/each}}
+  </div>
+
+  {{!-- Tab panels --}}
+  {{#each tabs}}
+  <div class="beavers-ai-tab-panel {{#unless isActive}}is-hidden{{/unless}}" data-tab-panel="{{id}}">
+    <div class="beavers-ai-body">
+
+      {{!-- Output --}}
+      <div class="beavers-ai-context">
+        {{#if context.isLoading}}
+        <div class="beavers-ai-status">
+          <i class="fas fa-spinner fa-spin"></i>
+        </div>
+        {{/if}}
+        {{#each context.sections}}
+        <div class="beavers-ai-section" data-section-id="{{id}}">
+          {{#if title}}<div class="beavers-ai-section-title">{{title}}</div>{{/if}}
+          <div class="beavers-ai-section-content">{{content}}</div>
+          {{#if useButtonLabel}}
+          <button type="button" class="beavers-ai-use-btn" data-use-section="{{id}}">
+            <i class="fas fa-check"></i> {{useButtonLabel}}
+          </button>
+          {{/if}}
+        </div>
+        {{/each}}
+      </div>
+
+      {{!-- Input --}}
+      <textarea class="beavers-ai-question"
+        placeholder="{{context.inputPlaceholder}}">{{context.inputText}}</textarea>
+
+      {{!-- Buttons --}}
+      <div class="beavers-ai-controls">
+        {{#each context.buttons}}
+        <button type="button" data-ext-btn="{{id}}" {{#if disabled}}disabled{{/if}}>
+          <i class="fas {{icon}}"></i> {{label}}
+        </button>
+        {{/each}}
+      </div>
+
+    </div>{{!-- .beavers-ai-body --}}
+  </div>{{!-- .beavers-ai-tab-panel --}}
+  {{/each}}
 
 </div>

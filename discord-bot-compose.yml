@@ -26,7 +26,7 @@ services:
       resources:
         reservations:
           devices:
-            - driver: nvidia.com/gpu
+            - driver: nvidia
               count: all
               capabilities: [gpu]
 
@@ -38,7 +38,7 @@ services:
     environment:
       - WHISPER_URL=http://whisper:9000
       # Update this to the GM's Foundry URL if running on a different machine:
-      - FOUNDRY_URL=http://host.docker.internal:13348
+      #- FOUNDRY_URL=http://host.docker.internal:13348
     depends_on:
       - whisper
     restart: unless-stopped
