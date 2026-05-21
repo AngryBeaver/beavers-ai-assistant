@@ -43,6 +43,7 @@ interface SettingConfig {
   'beavers-ai-assistant.localAiUrl': string;
   'beavers-ai-assistant.sessionHistoryMessages': number;
   'beavers-ai-assistant.adventureJournalFolder': string;
+  'beavers-ai-assistant.discordGmUser': string;
   'beavers-ai-assistant.aiGmChapter': string;
   'beavers-ai-assistant.aiGmScene': string;
   'beavers-ai-assistant.wizardLocation': string;

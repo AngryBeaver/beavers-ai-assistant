@@ -3,6 +3,7 @@ import { AI_ASSISTANT_USER_NAME, NAMESPACE, SETTINGS } from '../../definitions.j
 interface VoiceTranscriptContext {
   userId: string;
   password: string;
+  discordGmUser: string;
 }
 
 export class VoiceTranscriptSettingsApp extends (foundry.applications.api.HandlebarsApplicationMixin(
@@ -29,7 +30,8 @@ export class VoiceTranscriptSettingsApp extends (foundry.applications.api.Handle
     // @ts-ignore
     const user = game.users.find((u: any) => u.name === AI_ASSISTANT_USER_NAME);
     const password = game.settings.get(NAMESPACE, SETTINGS.AI_ASSISTANT_PASSWORD) as string;
-    return { userId: user?.id ?? '—', password };
+    const discordGmUser = game.settings.get(NAMESPACE, SETTINGS.DISCORD_GM_USER) as string;
+    return { userId: user?.id ?? '—', password, discordGmUser };
   }
 
   static async _onCopyUserId(this: VoiceTranscriptSettingsApp): Promise<void> {
@@ -60,6 +62,10 @@ export class VoiceTranscriptSettingsApp extends (foundry.applications.api.Handle
   }
 
   static async _onSave(this: VoiceTranscriptSettingsApp): Promise<void> {
+    const discordGmUser = (
+      this.element.querySelector('#discord-gm-user') as HTMLInputElement
+    ).value.trim();
+    await game.settings.set(NAMESPACE, SETTINGS.DISCORD_GM_USER, discordGmUser);
     ui.notifications.info('Voice Transcript settings saved.');
     await this.close();
   }

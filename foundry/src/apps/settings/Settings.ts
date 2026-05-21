@@ -80,6 +80,12 @@ export class Settings {
       type: String,
       default: '',
     });
+    game.settings.register(NAMESPACE, SETTINGS.DISCORD_GM_USER, {
+      scope: 'world',
+      config: false,
+      type: String,
+      default: '',
+    });
 
     // AI GM Window — persisted selections (client-scoped)
     game.settings.register(NAMESPACE, SETTINGS.AI_GM_CHAPTER, {

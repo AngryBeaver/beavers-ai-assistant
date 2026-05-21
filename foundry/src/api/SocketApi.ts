@@ -1,4 +1,4 @@
-import { NAMESPACE, SOCKET_NAME } from '../definitions.js';
+import { NAMESPACE, SETTINGS, SOCKET_NAME } from '../definitions.js';
 import { ChatBubbleApi, ChatBubbleOptions } from './ChatBubbleApi.js';
 import { JournalApi } from './JournalApi.js';
 import { JournalData, JournalPageData } from '../types';
@@ -94,13 +94,34 @@ export class SocketApi {
             data.args[1] as string,
           );
           break;
-        case 'chatBubble':
-          result = await ChatBubbleApi.showBubble(
-            data.args[0] as string,
-            data.args[1] as string,
-            (data.args[2] as ChatBubbleOptions | undefined) ?? {},
-          );
+        case 'chatBubble': {
+          const nameOrId = data.args[0] as string;
+          const message = data.args[1] as string;
+          const options = (data.args[2] as ChatBubbleOptions | undefined) ?? {};
+
+          const discordGmUser = game.settings.get(NAMESPACE, SETTINGS.DISCORD_GM_USER) as string;
+          let tokenId: string | undefined;
+
+          if (discordGmUser && nameOrId === discordGmUser) {
+            const gmToken = ChatBubbleApi.resolveGmNpcToken();
+            if (gmToken) tokenId = (gmToken as any).id;
+            // else: no NPC selected — silently ignore
+          } else {
+            const token = ChatBubbleApi.resolveToken(nameOrId);
+            if (token) tokenId = (token as any).id;
+          }
+
+          if (tokenId) {
+            // Broadcast via socketlib so every client renders the bubble
+            const slSocket = (game as any)[NAMESPACE]?.socket;
+            if (slSocket) {
+              await slSocket.executeForEveryone('chatBubble', tokenId, message, options);
+            } else {
+              await ChatBubbleApi.showBubble(tokenId, message, options);
+            }
+          }
           break;
+        }
         default:
           throw new Error(`Unknown action: ${data.action}`);
       }

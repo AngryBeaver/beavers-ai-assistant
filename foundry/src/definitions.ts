@@ -34,6 +34,9 @@ export const SETTINGS = {
   AI_GM_CHAPTER: 'aiGmChapter',
   AI_GM_SCENE: 'aiGmScene',
 
+  // Voice Transcript
+  DISCORD_GM_USER: 'discordGmUser',
+
   // Lore Index Wizard — persisted selections (client-scoped)
   WIZARD_LOCATION: 'wizardLocation',
   WIZARD_CHAPTERS: 'wizardChapters',

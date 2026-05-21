@@ -33,6 +33,21 @@
     </div>
   </fieldset>
 
+  <fieldset style="margin:5px 0px;">
+    <legend>Voice Transcript Options</legend>
+    <div class="form-group">
+      <label for="discord-gm-user">Discord GM Username:</label>
+      <div class="form-fields">
+        <input type="text" id="discord-gm-user" value="{{discordGmUser}}"
+          placeholder="e.g. AngryBeaver" style="flex:1" data-dtype="String">
+      </div>
+      <p class="hint">
+        Discord display name of the GM. When speaking, the chat bubble will appear on the
+        GM's currently selected NPC token instead of a character by that name.
+      </p>
+    </div>
+  </fieldset>
+
   <div style="display:flex;justify-content:flex-end;margin-top:1.25rem">
     <button type="submit" data-action="save" style="min-width:80px">
       <i class="fas fa-save"></i> Save
