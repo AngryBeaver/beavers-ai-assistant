@@ -25,8 +25,8 @@ services:
       dockerfile: ./Dockerfile
     env_file: ./discord-bot/.env
     environment:
+      - FOUNDRY_URL=http://192.168.0.12:14361
       - WHISPER_URL=http://whisper:9000
-      - FOUNDRY_URL=http://host.docker.internal:13348
     depends_on:
       - whisper
     restart: unless-stopped
