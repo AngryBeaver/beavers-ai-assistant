@@ -72,4 +72,19 @@ export namespace AiService {
     }
     return _instances.get(provider)!;
   }
+
+  /**
+   * Returns true when the currently-configured provider has the required credentials.
+   * Claude: needs a non-empty API key. Local AI: needs a non-empty URL.
+   */
+  export function isConfigured(provider?: AiProvider): boolean {
+    const resolved: string =
+      provider ??
+      (game.settings.get(NAMESPACE, SETTINGS.AI_PROVIDER) as string) ??
+      DEFAULTS.AI_PROVIDER;
+    if (resolved === 'claude') {
+      return !!(game.settings.get(NAMESPACE, SETTINGS.CLAUDE_API_KEY) as string);
+    }
+    return !!(game.settings.get(NAMESPACE, SETTINGS.LOCAL_AI_URL) as string);
+  }
 }
