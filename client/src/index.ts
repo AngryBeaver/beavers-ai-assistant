@@ -49,19 +49,25 @@ export class BeaversClient {
       redirect: 'manual',
     });
     const body = await loginRes.json().catch(() => ({}));
-    if ((body as { status?: string }).status !== 'success') {
+    // Only fail on an explicit rejection; V14 may redirect (3xx) or omit the status field
+    if ((body as { status?: string }).status === 'failed') {
       throw new Error(`Login failed: ${(body as { message?: string }).message ?? loginRes.status}`);
+    }
+    if (loginRes.status >= 400) {
+      throw new Error(`Login failed: HTTP ${loginRes.status}`);
     }
 
     const cookie = loginRes.headers.get('set-cookie')?.split(';')[0].trim() ?? initCookie;
-    const sessionId = cookie.split('=')[1];
+    // slice(1).join preserves '=' characters inside base64/signed cookie values
+    const sessionId = cookie.split('=').slice(1).join('=');
 
-    // 3. Connect socket.io using session ID as query param (mirrors Foundry's Game.connect())
+    // 3. Connect socket.io — pass cookie via extraHeaders (V14) and query param (V13 compat)
     this.#socket = await new Promise<Socket>((resolve, reject) => {
       const socket = io(this.#url, {
         path: '/socket.io',
         transports: ['websocket'],
         upgrade: false,
+        extraHeaders: { Cookie: cookie },
         query: { session: sessionId },
         withCredentials: false,
       });

@@ -15,7 +15,9 @@ const client = new Client({
 
 client.once(Events.ClientReady, async (c) => {
   console.log(`[Bot] Logged in as ${c.user.tag}`);
-  await foundry.connect();
+  await foundry.connect().catch((err: Error) => {
+    console.error(`[Foundry] Connection failed, continuing without Foundry: ${err.message}`);
+  });
 
   const guild = await client.guilds.fetch(process.env.DISCORD_GUILD_ID!);
   const channel = await guild.channels.fetch(process.env.DISCORD_CHANNEL_ID!);
