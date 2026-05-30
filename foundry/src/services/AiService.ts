@@ -74,6 +74,16 @@ export namespace AiService {
   }
 
   /**
+   * Return a cached singleton for the currently-configured provider.
+   * Convenience wrapper around get() — reads AI_PROVIDER from game settings.
+   */
+  export function getDefault(): AiService {
+    const provider =
+      ((game.settings.get(NAMESPACE, SETTINGS.AI_PROVIDER) as AiProvider) ?? DEFAULTS.AI_PROVIDER);
+    return get(provider);
+  }
+
+  /**
    * Returns true when the currently-configured provider has the required credentials.
    * Claude: needs a non-empty API key. Local AI: needs a non-empty URL.
    */

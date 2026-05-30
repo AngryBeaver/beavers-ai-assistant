@@ -1,6 +1,7 @@
 import { NAMESPACE, SETTINGS, SOCKET_NAME } from '../definitions.js';
 import { ChatBubbleApi, ChatBubbleOptions } from './ChatBubbleApi.js';
 import { JournalApi } from './JournalApi.js';
+import { ActorApi } from './ActorApi.js';
 import { JournalData, JournalPageData } from '../types';
 
 interface SocketRequest {
@@ -93,6 +94,21 @@ export class SocketApi {
             data.args[0] as string,
             data.args[1] as string,
           );
+          break;
+        case 'listCompendiumActors':
+          result = await ActorApi.listCompendiumActors(data.args[0] as string | undefined);
+          break;
+        case 'queryCompendiumActor':
+          result = await ActorApi.queryCompendiumActor(
+            data.args[0] as string,
+            data.args[1] as string | undefined,
+          );
+          break;
+        case 'readWorldActor':
+          result = await ActorApi.readWorldActor(data.args[0] as string);
+          break;
+        case 'deleteWorldActor':
+          result = await ActorApi.deleteWorldActor(data.args[0] as string);
           break;
         case 'chatBubble': {
           const nameOrId = data.args[0] as string;

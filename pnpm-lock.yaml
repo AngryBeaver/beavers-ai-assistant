@@ -112,6 +112,12 @@ importers:
         specifier: ^2
         version: 2.1.9(@types/node@22.19.15)
 
+  test:
+    dependencies:
+      beavers-voice-transcript-client:
+        specifier: file:../client
+        version: link:../client
+
 packages:
 
   '@babel/code-frame@7.29.0':

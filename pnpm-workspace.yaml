@@ -2,6 +2,7 @@ packages:
   - client
   - discord-bot
   - foundry
+  - test
 allowBuilds:
   '@discordjs/opus': false
   esbuild: false
