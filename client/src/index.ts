@@ -1,8 +1,8 @@
 import { io, Socket } from 'socket.io-client';
 import { randomUUID } from 'crypto';
-import type { JournalData, JournalPageData } from './types.js';
+import type { JournalData, JournalPageData, ActorSummary } from './types.js';
 
-export type { JournalData, JournalPageData };
+export type { JournalData, JournalPageData, ActorSummary };
 
 const SOCKET_NAME = 'module.beavers-ai-assistant';
 
@@ -162,9 +162,49 @@ export class BeaversClient {
     return this.#request('appendJournalPage', [journalIdentifier, pageName, html, maxPageBytes]);
   }
 
+  // ── Actor / Compendium API ──────────────────────────────────────────────────
+
+  /** List all actors in a compendium pack (or all Actor packs if omitted). */
+  async listCompendiumActors(packId?: string): Promise<ActorSummary[]> {
+    return this.#request('listCompendiumActors', packId ? [packId] : []);
+  }
+
+  /** Fetch a full actor document from a compendium pack by name. */
+  async queryCompendiumActor(
+    name: string,
+    packId?: string,
+  ): Promise<Record<string, unknown> | null> {
+    return this.#request('queryCompendiumActor', packId ? [name, packId] : [name]);
+  }
+
+  /** Read a world actor by internal ID or exact name. */
+  async readWorldActor(nameOrId: string): Promise<Record<string, unknown> | null> {
+    return this.#request('readWorldActor', [nameOrId]);
+  }
+
+  /** Delete a world actor by internal ID or exact name. Returns true if deleted. */
+  async deleteWorldActor(nameOrId: string): Promise<boolean> {
+    return this.#request('deleteWorldActor', [nameOrId]);
+  }
+
+  /**
+   * Ask beavers-beyond-parser to fetch + parse a D&D Beyond monster URL and
+   * return the would-be actor data WITHOUT creating the actor in Foundry.
+   * Requires beavers-beyond-parser module to be active in the same Foundry instance.
+   */
+  async previewMonsterImport(
+    url: string,
+    options: { skipAi?: boolean } = {},
+  ): Promise<{ actorData: Record<string, unknown>; name: string } | null> {
+    return this.#channelRequest('module.beavers-beyond-parser', 'previewMonsterImport', [
+      url,
+      options,
+    ]);
+  }
+
   // ── Internal ────────────────────────────────────────────────────────────────
 
-  async #request<T>(action: string, args: unknown[]): Promise<T> {
+  async #channelRequest<T>(channel: string, action: string, args: unknown[]): Promise<T> {
     if (!this.#socket?.connected)
       throw new Error(
         `Not connected — socket is ${this.#socket ? 'disconnected' : 'not initialised'}. Call connect() first.`,
@@ -176,7 +216,7 @@ export class BeaversClient {
         () =>
           reject(
             new Error(
-              `Request "${action}" timed out — socket connected but no Foundry response (GM may not be present).`,
+              `Request "${action}" timed out on channel "${channel}" — socket connected but no response (GM may not be present).`,
             ),
           ),
         this.#timeout,
@@ -185,13 +225,17 @@ export class BeaversClient {
       const handler = (data: { id: string; error?: string; data?: T }) => {
         if (data?.id !== id) return;
         clearTimeout(timer);
-        this.#socket!.off(SOCKET_NAME, handler);
+        this.#socket!.off(channel, handler);
         if (data.error) reject(new Error(data.error));
         else resolve(data.data as T);
       };
 
-      this.#socket!.on(SOCKET_NAME, handler);
-      this.#socket!.emit(SOCKET_NAME, { id, action, args });
+      this.#socket!.on(channel, handler);
+      this.#socket!.emit(channel, { id, action, args });
     });
+  }
+
+  async #request<T>(action: string, args: unknown[]): Promise<T> {
+    return this.#channelRequest(SOCKET_NAME, action, args);
   }
 }

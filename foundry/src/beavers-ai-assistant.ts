@@ -4,10 +4,13 @@ import { AiGmWindow } from './apps/AiGmWindow.js';
 import { ChatBubbleApi } from './api/ChatBubbleApi.js';
 import { JournalApi } from './api/JournalApi.js';
 import { SocketApi } from './api/SocketApi.js';
+import { AiService } from './services/AiService.js';
 
 Hooks.once('init', async function () {
   game[NAMESPACE] = game[NAMESPACE] || {};
   game[NAMESPACE].Settings = new ApiSettings();
+  // @ts-ignore
+  game[NAMESPACE].AiService = AiService;
 
   game.keybindings!.register(NAMESPACE, 'openAiGmWindow', {
     name: 'Open AI GM Window',

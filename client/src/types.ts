@@ -14,6 +14,12 @@ export interface JournalPageData {
   format?: 'markdown' | 'html';
 }
 
+export interface ActorSummary {
+  id: string;
+  name: string;
+  img: string;
+}
+
 export interface JournalData {
   /** Foundry internal document ID (returned by write operations). */
   _id?: string;
