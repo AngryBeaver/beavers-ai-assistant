@@ -79,7 +79,7 @@ export namespace AiService {
    */
   export function getDefault(): AiService {
     const provider =
-      ((game.settings.get(NAMESPACE, SETTINGS.AI_PROVIDER) as AiProvider) ?? DEFAULTS.AI_PROVIDER);
+      (game.settings.get(NAMESPACE, SETTINGS.AI_PROVIDER) as AiProvider) ?? DEFAULTS.AI_PROVIDER;
     return get(provider);
   }
 

@@ -14,7 +14,7 @@ export class ActorApi {
       if (pack.metadata?.type !== 'Actor') continue;
       try {
         const index = await pack.getIndex();
-        for (const entry of (index as any)) {
+        for (const entry of index as any) {
           results.push({
             id: `Compendium.${pack.collection}.Actor.${entry._id}`,
             name: entry.name ?? '',

@@ -196,7 +196,10 @@ export class BeaversClient {
     url: string,
     options: { skipAi?: boolean } = {},
   ): Promise<{ actorData: Record<string, unknown>; name: string } | null> {
-    return this.#channelRequest('module.beavers-beyond-parser', 'previewMonsterImport', [url, options]);
+    return this.#channelRequest('module.beavers-beyond-parser', 'previewMonsterImport', [
+      url,
+      options,
+    ]);
   }
 
   // ── Internal ────────────────────────────────────────────────────────────────
