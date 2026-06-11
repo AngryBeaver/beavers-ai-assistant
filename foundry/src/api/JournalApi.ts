@@ -146,11 +146,11 @@ export class JournalApi {
     if (!page) {
       // @ts-ignore
       await journal.createEmbeddedDocuments('JournalEntryPage', [
-        { name: 'Transcript', type: 'text', text: { content: line, format: 2 } },
+        { name: 'Transcript', type: 'text', text: { markdown: line, format: 2 } },
       ]);
     } else {
-      const existing = page.text?.content ?? '';
-      await page.update({ 'text.format': 2, 'text.content': existing + line });
+      const existing = page.text?.markdown ?? '';
+      await page.update({ 'text.format': 2, 'text.markdown': existing + line });
     }
   }
 
@@ -208,7 +208,7 @@ export class JournalApi {
       });
 
     const currentPage = matching[0] ?? null;
-    const currentSize = new TextEncoder().encode(currentPage?.text?.content ?? '').length;
+    const currentSize = new TextEncoder().encode(currentPage?.text?.markdown ?? '').length;
 
     if (!currentPage || currentSize + new TextEncoder().encode(markdown).length > maxPageBytes) {
       const nextNum = currentPage
@@ -217,11 +217,11 @@ export class JournalApi {
       const newName = nextNum ? `${pageName} (${nextNum})` : pageName;
       // @ts-ignore
       return journal.createEmbeddedDocuments('JournalEntryPage', [
-        { name: newName, type: 'text', text: { content: markdown + '\n', format: 2 } },
+        { name: newName, type: 'text', text: { markdown: markdown + '\n', format: 2 } },
       ]);
     }
 
-    const existing = currentPage.text?.content ?? '';
-    return currentPage.update({ 'text.content': existing + markdown + '\n' });
+    const existing = currentPage.text?.markdown ?? '';
+    return currentPage.update({ 'text.format': 2, 'text.markdown': existing + markdown + '\n' });
   }
 }
