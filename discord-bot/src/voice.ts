@@ -8,9 +8,28 @@ import {
 } from '@discordjs/voice';
 import * as prism from 'prism-media';
 import { VoiceBasedChannel } from 'discord.js';
+import fs from 'fs';
+import path from 'path';
 import { transcribe } from './whisper.js';
 import { transcribeJournal, showChatBubble } from './foundry.js';
 import { detectCommand } from './commands.js';
+
+const TRAINING_DATA_DIR = process.env.TRAINING_DATA_DIR ?? '';
+const speakerCounters = new Map<string, number>();
+
+async function saveTrainingPair(speakerName: string, wav: Buffer, transcript: string): Promise<void> {
+  if (!TRAINING_DATA_DIR) return;
+  const today = new Date().toISOString().slice(0, 10);
+  const dir = path.join(TRAINING_DATA_DIR, today);
+  await fs.promises.mkdir(dir, { recursive: true });
+  const n = (speakerCounters.get(speakerName) ?? 0) + 1;
+  speakerCounters.set(speakerName, n);
+  const base = path.join(dir, `${speakerName}_${String(n).padStart(4, '0')}`);
+  await Promise.all([
+    fs.promises.writeFile(`${base}.wav`, wav),
+    fs.promises.writeFile(`${base}.txt`, transcript, 'utf8'),
+  ]);
+}
 
 const SILENCE_TIMEOUT_MS = 1000;
 // At 48000 Hz, 16-bit mono: 96 bytes per millisecond of PCM
@@ -100,6 +119,7 @@ function listenToUser(
         console.log(`[Voice] Filtered hallucination from ${displayName}: "${transcript}"`);
         return;
       }
+      await saveTrainingPair(displayName, buffer, transcript);
 
       const command = detectCommand(transcript);
 

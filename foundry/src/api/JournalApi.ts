@@ -140,17 +140,17 @@ export class JournalApi {
       journal = await JournalEntry.create({ name: journalName, folder: sessionFolder.id });
     }
 
-    const line = `**${speaker}:** ${msg}\n\n`;
+    const line = `<p><strong>${speaker}:</strong> ${msg}</p>`;
     // @ts-ignore
     const page = journal.pages.getName('Transcript');
     if (!page) {
       // @ts-ignore
       await journal.createEmbeddedDocuments('JournalEntryPage', [
-        { name: 'Transcript', type: 'text', text: { markdown: line, format: 2 } },
+        { name: 'Transcript', type: 'text', text: { content: line, format: 1 } },
       ]);
     } else {
-      const existing = page.text?.markdown ?? '';
-      await page.update({ 'text.format': 2, 'text.markdown': existing + line });
+      const existing = page.text?.content ?? '';
+      await page.update({ 'text.format': 1, 'text.content': existing + line });
     }
   }
 
